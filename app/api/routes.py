@@ -1,8 +1,10 @@
 """
 All API Routes
 """
-from fastapi import APIRouter
+from fastapi import APIRouter, UploadFile, File
 from app.models import RootResponse, ItemResponse, ItemRequest
+from fastapi.responses import JSONResponse
+from app.service import upload_handler
 
 router = APIRouter()
 
@@ -21,3 +23,8 @@ def read_item(item_id: int, q: str | None = None):
 def create_item(item: ItemRequest):
     """Create a new item"""
     return {"item_id": 1, "q": item.name}
+
+@router.post("/upload")
+async def upload(file: UploadFile = File(...)):
+    result = await upload_handler(file)
+    return JSONResponse(result)
