@@ -2,9 +2,9 @@
 All API Routes
 """
 from fastapi import APIRouter, Depends, UploadFile, File
-from app.models import RootResponse, ItemResponse, ItemRequest
+from app.schemas.root_schema import RootResponse, ItemResponse, ItemRequest
 from fastapi.responses import JSONResponse
-from app.services import upload_handler
+from app.services.upload_services import UploadServices
 
 router = APIRouter()
 
@@ -16,6 +16,6 @@ def read_root():
 @router.post("/upload")
 async def upload(
     file: UploadFile = File(...),
-    service: upload_handler = Depends()
+    service: UploadServices = Depends()
 ):
     return await service.save_file(file)

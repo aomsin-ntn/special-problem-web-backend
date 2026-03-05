@@ -3,7 +3,7 @@ Webhook Handler - Send and receive webhooks
 """
 import requests
 
-class WebhookHandler:
+class WebhookServices:
     WEBHOOK_URL = "http://localhost:5678/webhook-test/file"
     
     def send_text(self, text: str):

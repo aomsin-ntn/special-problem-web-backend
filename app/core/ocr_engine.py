@@ -1,17 +1,14 @@
 import re
-from attrs import fields
 import cv2
 import numpy as np
 from pdf2image import convert_from_path
 import easyocr
-from pythainlp.tokenize import word_tokenize
-from pythainlp.spell import spell
-from pythainlp.util import isthai
 
-class OCRModel:
-    def __init__(self, data=None, langs=('th','en')):
-        self.data = data
-        self.ocr_reader = easyocr.Reader(langs, gpu=False)
+class OCREngine:
+
+    def __init__(self, poppler_path: str | None = None):
+        self.poppler_path = poppler_path
+        self.reader = easyocr.Reader(["th", "en"], gpu=False)
 
     @staticmethod
     def joinText(ocr_result, sep=" ") -> str:
@@ -23,6 +20,17 @@ class OCRModel:
         _, th = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
         return th 
 
+    def pdfToImage(self, file_path: str, page_num: int = 1) -> np.ndarray:
+        pages = convert_from_path(
+            file_path,
+            dpi=300,
+            first_page=page_num,
+            last_page=page_num,
+            poppler_path=self.poppler_path  
+        )
+        pil_img = pages[0]                
+        return cv2.cvtColor(np.array(pil_img), cv2.COLOR_RGB2BGR)
+    
     def extractFields(self, text: str) -> dict:
         pattern = {
             'หัวข้อ': r'(?:หัวข้อ(?:ปัญหาพิเศษ|สหกิจศึกษา|โครงงานพิเศษ)|สหกิจศึกษา)\s*(.*?)(?=\sชื่อนักศึกษา|$)',
@@ -43,24 +51,12 @@ class OCRModel:
                 results[key] = m.group(1).strip()
         return results
 
-    def pdfToImage(self, file_path: str, page_num: int = 1, poppler_path: str = None) -> np.ndarray:
-        pages = convert_from_path(
-            file_path,
-            dpi=300,
-            first_page=page_num,
-            last_page=page_num,
-            poppler_path=poppler_path  
-        )
-        pil_img = pages[0]                
-        cv_img = cv2.cvtColor(np.array(pil_img), cv2.COLOR_RGB2BGR)  
-        return cv_img
-    
-    def processDocumentOCR(self, file_path: str, page_num: int = 4,poppler_path: str = None) -> dict:
-        img_bgr = self.pdfToImage(file_path, page_num=page_num, poppler_path=poppler_path)
+    def processDocumentOCR(self, file_path: str, page_num: int = 4) -> dict:
+        img_bgr = self.pdfToImage(file_path,page_num)
         img_bin =  self.preprocessOCR(img_bgr)
         img_rgb = cv2.cvtColor(img_bin, cv2.COLOR_GRAY2RGB)
-        ocr_result = self.ocr_reader.readtext(img_rgb)
+        ocr_result = self.reader.readtext(img_rgb)
         sentence = self.joinText(ocr_result, sep=" ")
         print(sentence)
-        fields = self.extractFields(sentence)
-        return fields 
+        #fields = self.extractFields(sentence)
+        return sentence
