@@ -8,8 +8,7 @@ from pythainlp.tokenize import word_tokenize
 from pythainlp.spell import spell
 from pythainlp.util import isthai
 
-
-class Model:
+class OCRModel:
     def __init__(self, data=None, langs=('th','en')):
         self.data = data
         self.ocr_reader = easyocr.Reader(langs, gpu=False)
@@ -65,7 +64,3 @@ class Model:
         print(sentence)
         fields = self.extractFields(sentence)
         return fields 
-    
-    def tokenizeText(self, text: str) -> list:
-        tokens = word_tokenize(text, engine='newmm')
-        return tokens
