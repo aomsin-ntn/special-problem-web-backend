@@ -12,10 +12,12 @@ class WebhookServices:
         }
 
         try:
-            response = requests.post(self.WEBHOOK_URL, json=payload, timeout=10)
+            response = requests.post(self.WEBHOOK_URL, json=payload, timeout=60)
             response.raise_for_status()
             print("sent successfully")
             print("Response:", response.text)
+            return response.json()
 
         except requests.exceptions.RequestException as e:
             print("failed to send:", e)
+            return []
