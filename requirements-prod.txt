@@ -1,0 +1,30 @@
+# FastAPI Web Framework
+fastapi==0.116.1
+uvicorn==0.35.0
+python-multipart==0.0.20
+
+# OCR and Computer Vision
+easyocr==1.7.2
+opencv-python==4.12.0.88
+numpy==1.26.4
+
+# PDF Processing
+pdf2image==1.17.0
+PyMuPDF==1.26.4
+
+# Thai Language Processing
+pythainlp==5.2.0
+attacut==1.0.6
+
+# HTTP Requests
+requests==2.32.5
+
+# Environment Variables
+python-dotenv==1.1.1
+
+# Pydantic for data validation
+pydantic==2.11.7
+pydantic-settings==2.11.0
+
+# CORS support
+fastapi-cors>=0.0.1
