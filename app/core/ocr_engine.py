@@ -1,8 +1,11 @@
+from email.mime import text
 import re
+from annotated_types import doc
 import cv2
 import numpy as np
 from pdf2image import convert_from_path
 import easyocr
+import pymupdf
 
 class OCREngine:
 
@@ -11,16 +14,21 @@ class OCREngine:
         self.reader = easyocr.Reader(["th", "en"], gpu=False)
 
     @staticmethod
-    def joinText(ocr_result, sep=" ") -> str:
+    def join_text(ocr_result, sep=" ") -> str:
         texts = [text.strip() for (_, text, _) in ocr_result if text and text.strip()]
         return sep.join(texts)
     
-    def preprocessOCR(self, img_bgr: np.ndarray) -> np.ndarray:
+    def preprocess_ocr(self, img_bgr: np.ndarray) -> np.ndarray:
         gray = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2GRAY)
         _, th = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
         return th 
+    
+    def pdf_to_text(self, file_path: str, page_num: int = 4) -> str:
+        doc = pymupdf.open(file_path)
+        page = doc[page_num-1]
+        return page.get_text()
 
-    def pdfToImage(self, file_path: str, page_num: int = 1) -> np.ndarray:
+    def pdf_to_image(self, file_path: str, page_num: int = 1) -> np.ndarray:
         pages = convert_from_path(
             file_path,
             dpi=300,
@@ -30,33 +38,65 @@ class OCREngine:
         )
         pil_img = pages[0]                
         return cv2.cvtColor(np.array(pil_img), cv2.COLOR_RGB2BGR)
-    
-    def extractFields(self, text: str) -> dict:
-        pattern = {
-            'หัวข้อ': r'(?:หัวข้อ(?:ปัญหาพิเศษ|สหกิจศึกษา|โครงงานพิเศษ)|สหกิจศึกษา)\s*(.*?)(?=\sชื่อนักศึกษา|$)',
-            'ชื่อนักศึกษา': r'ชื่อนักศึกษา\s*(.*?)(?=\sปริญญา|$)',
-            'ปริญญา': r'ปริญญา\s*(.*?)(?=\sภาควิชา|$)',
-            'ภาควิชา': r'ภาควิชา\s*(.*?)(?=\sคณะ|ปีการศึกษา|$)',
-            'คณะ': r'คณะ\s*(.*?)(?=\sมหาวิทยาลัย|$)',
-            'มหาวิทยาลัย': r'มหาวิทยาลัย\s*(.*?)(?=\sปีการศึกษา|$)',
-            'ปีการศึกษา': r'ปีการศึกษา\s*(.*?)(?=\sอาจารย์ที่ปรึกษา|$)',
-            'อาจารย์ที่ปรึกษา': r'อาจารย์ที่ปรึกษา\s*(.*?)(?=\sบทคัดย่อ|$)',
-            'บทคัดย่อ': r'บทคัดย่อ\s*(.*?)(?=\sคำสำคัญ|$)',
-            'คำสำคัญ': r'(?:คำสำคัญ:|คำสำคัญ)\s*(.*?)(?=\sTitle|$)',
-        }
-        results = {}
-        for key, pat in pattern.items():
-            m = re.search(pat, text, flags=re.DOTALL)
-            if m:
-                results[key] = m.group(1).strip()
-        return results
 
-    def processDocumentOCR(self, file_path: str, page_num: int = 4) -> dict:
-        img_bgr = self.pdfToImage(file_path,page_num)
-        img_bin =  self.preprocessOCR(img_bgr)
+    def sort_ocr_result(self, ocr_result, y_threshold=None):
+        """
+        เรียง OCR: ซ้าย→ขวา และ บน→ล่าง
+        """
+
+        # 🔥 คำนวณ threshold อัตโนมัติ (แม่นกว่า fix)
+        if y_threshold is None:
+            heights = [
+                max(p[1] for p in bbox) - min(p[1] for p in bbox)
+                for bbox, _, _ in ocr_result
+            ]
+            y_threshold = np.mean(heights) * 0.5 if heights else 15
+
+        items = []
+        for bbox, text, conf in ocr_result:
+            x = sum([p[0] for p in bbox]) / 4
+            y = sum([p[1] for p in bbox]) / 4
+            items.append((x, y, bbox, text, conf))
+
+        # sort บน → ล่าง
+        items.sort(key=lambda x: x[1])
+
+        lines = []
+        current_line = []
+        current_y = None
+
+        for item in items:
+            x, y, bbox, text, conf = item
+
+            if current_y is None:
+                current_line.append(item)
+                current_y = y
+            elif abs(y - current_y) < y_threshold:
+                current_line.append(item)
+            else:
+                lines.append(current_line)
+                current_line = [item]
+                current_y = y
+
+        if current_line:
+            lines.append(current_line)
+
+        # sort ซ้าย → ขวา
+        sorted_result = []
+        for line in lines:
+            line.sort(key=lambda x: x[0])
+            sorted_result.extend(line)
+
+        return [(bbox, text, conf) for (_, _, bbox, text, conf) in sorted_result]
+
+
+    def process_document_ocr(self, file_path: str, page_num: int = 4) -> dict:
+
+        img_bgr = self.pdf_to_image(file_path, page_num)
+        img_bin = self.preprocess_ocr(img_bgr)
         img_rgb = cv2.cvtColor(img_bin, cv2.COLOR_GRAY2RGB)
         ocr_result = self.reader.readtext(img_rgb)
-        sentence = self.joinText(ocr_result, sep=" ")
-        print(sentence)
-        #fields = self.extractFields(sentence)
+        sorted_result = self.sort_ocr_result(ocr_result)
+        sentence = self.join_text(sorted_result)
+
         return sentence
