@@ -8,6 +8,15 @@ import json
 import easyocr
 from attacut import tokenize
 from app.services.spellchecker_services import SpellChecker
+from app.models.project import Project
+from app.models.project_file import ProjectFile
+from app.models.degree import Degree
+from app.models.user import User
+from app.database import get_db
+from sqlmodel import Session
+from app.repository.project_repository import ProjectRepository
+from fastapi import Depends
+from sqlalchemy.ext.asyncio import AsyncSession
 
 class UploadServices:
     poppler_path = r"C:\poppler-25.07.0\Library\bin"
@@ -17,7 +26,7 @@ class UploadServices:
         self.ocr_engine = OCREngine(poppler_path=self.poppler_path)
         self.webhook_services = WebhookServices()
 
-    async def save_file(self, file: UploadFile):
+    async def save_file(self, file: UploadFile, page: list[int] = [1],session: AsyncSession = Depends(get_db)):
         ext = Path(file.filename).suffix
         safe_name = f"{uuid4().hex}{ext}"
         dest = self.upload_dir / safe_name
@@ -25,8 +34,10 @@ class UploadServices:
         with dest.open("wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
 
-        ocr_text = self.ocr_engine.process_document_ocr(str(dest), page_num=4)
-        ext_text = self.ocr_engine.pdf_to_text(str(dest), page_num=4)
+        #ocr_text1 = self.ocr_engine.process_document_ocr(str(dest), page_num=page[0])
+        #ocr_text2 = self.ocr_engine.process_document_ocr(str(dest), page_num=page[1])
+        ext_text1 = self.ocr_engine.pdf_to_text(str(dest), page_num=page[0])
+        ext_text2 = self.ocr_engine.pdf_to_text(str(dest), page_num=page[1])
         # ocr = self.webhook_services.send_text(ocr_text)
         # ext = self.webhook_services.send_text(ext_text)
         # print(ext)
@@ -38,13 +49,45 @@ class UploadServices:
         }
 
         checker = SpellChecker(error_dict, threshold=10)
-        suggestions = checker.compare(ocr_text, ext_text)
+        #suggestions1 = checker.compare(ocr_text1, ext_text1)
+        suggestions1 = checker.compare(ext_text1, ext_text1)
+        #suggestions2 = checker.compare(ocr_text2, ext_text2)
+        suggestions2 = checker.compare(ext_text2, ext_text2)
         # print(suggestions)
-        if suggestions["better"] in ["equal", "text1"]: 
-            fields = checker.extract_fields(ocr_text)
+        if suggestions1["better"] in ["equal", "text1"]: 
+            fields1 = checker.extract_fields(ext_text1)
         else:
-            fields = checker.extract_fields(ext_text)
-        print(fields)
+            fields1 = checker.extract_fields(ext_text1)
+        if suggestions2["better"] in ["equal", "text2"]: 
+            fields2 = checker.extract_fields(ext_text2)
+        else:
+            fields2 = checker.extract_fields(ext_text2)
+        print(fields1, ext_text2)
+        user = User(user_id="admin", user_name_th="Admin User", email="admin@example.com")
+        #result = session.query(Degree).filter(Degree.degree_name_th == fields1.get("ปริญญา")).first()
+        result = None
+        project_file = ProjectFile(
+            filename=file.filename,
+            path=str(dest)
+        )
+        project=Project(
+            title_th=fields1.get("หัวข้อ", ""),
+            title_en="apichard",
+            # title_en=fields2.get("title", ""),
+            abstract_th=fields1.get("คำสำคัญ", ""),
+            # abstract_en=fields2.get("abstract", ""),
+            abstract_en="Hello",
+            academic_year=fields1.get("ปิการศึกษา", ""),
+            degree_id=result.id if result else None,
+            create_by=user.user_id,
+            is_active=False,
+            file_id=project_file.file_id,
+            download_count=0
+        )
+
+        await ProjectRepository.create_project(session, project)
+
+        print(project)
         # print("Text1:", result1)
         # print("Text2:", result2)
         # print(conclusion)
@@ -56,6 +99,6 @@ class UploadServices:
         return {
             "original_filename": file.filename,
             "saved_as": safe_name,
-            # "fields": ocr,
-            # "fields2": ext
+            "fields-th": fields1,
+            "fields-en": fields2
         }

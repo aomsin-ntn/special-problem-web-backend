@@ -1,6 +1,6 @@
 """
 API Package
 """
-from .routes import router
+from .project import router
 
 __all__ = ["router"]
