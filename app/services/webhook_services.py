@@ -3,8 +3,7 @@ Webhook Handler - Send and receive webhooks
 """
 import requests
 
-
-class WebhookHandler:
+class WebhookServices:
     WEBHOOK_URL = "http://localhost:5678/webhook-test/file"
     
     def send_text(self, text: str):
@@ -13,10 +12,12 @@ class WebhookHandler:
         }
 
         try:
-            response = requests.post(self.WEBHOOK_URL, json=payload, timeout=10)
+            response = requests.post(self.WEBHOOK_URL, json=payload, timeout=60)
             response.raise_for_status()
-            print("ส่งข้อความสำเร็จ")
+            print("sent successfully")
             print("Response:", response.text)
+            return response.json()
 
         except requests.exceptions.RequestException as e:
-            print("ส่งไม่สำเร็จ:", e)
+            print("failed to send:", e)
+            return []
