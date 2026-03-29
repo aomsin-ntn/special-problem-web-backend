@@ -7,12 +7,7 @@ from fastapi.responses import JSONResponse
 from app.services.upload_services import UploadServices
 
 router = APIRouter()
-
-
-@router.get("/", response_model=RootResponse)
-def read_root():
-    return {"message": "World"}
-
+ 
 @router.post("/upload")
 async def upload(
     file: UploadFile = File(...),

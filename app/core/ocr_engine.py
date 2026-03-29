@@ -40,11 +40,6 @@ class OCREngine:
         return cv2.cvtColor(np.array(pil_img), cv2.COLOR_RGB2BGR)
 
     def sort_ocr_result(self, ocr_result, y_threshold=None):
-        """
-        เรียง OCR: ซ้าย→ขวา และ บน→ล่าง
-        """
-
-        # 🔥 คำนวณ threshold อัตโนมัติ (แม่นกว่า fix)
         if y_threshold is None:
             heights = [
                 max(p[1] for p in bbox) - min(p[1] for p in bbox)
@@ -58,7 +53,6 @@ class OCREngine:
             y = sum([p[1] for p in bbox]) / 4
             items.append((x, y, bbox, text, conf))
 
-        # sort บน → ล่าง
         items.sort(key=lambda x: x[1])
 
         lines = []
@@ -81,7 +75,6 @@ class OCREngine:
         if current_line:
             lines.append(current_line)
 
-        # sort ซ้าย → ขวา
         sorted_result = []
         for line in lines:
             line.sort(key=lambda x: x[0])

@@ -17,26 +17,6 @@ class UploadServices:
         self.ocr_engine = OCREngine(poppler_path=self.poppler_path)
         self.webhook_services = WebhookServices()
 
-    def extract_fields(self, text: str) -> dict:
-        pattern = {
-            'หัวข้อ': r'(?:หัวข้อ(?:ปัญหาพิเศษ|สหกิจศึกษา|โครงงานพิเศษ)|สหกิจศึกษา)\s*(.*?)(?=\sชื่อนักศึกษา|$)',
-            'ชื่อนักศึกษา': r'ชื่อนักศึกษา\s*(.*?)(?=\sปริญญา|$)',
-            'ปริญญา': r'ปริญญา\s*(.*?)(?=\sภาควิชา|$)',
-            'ภาควิชา': r'ภาควิชา\s*(.*?)(?=\sคณะ|ปีการศึกษา|$)',
-            'คณะ': r'คณะ\s*(.*?)(?=\sมหาวิทยาลัย|$)',
-            'มหาวิทยาลัย': r'มหาวิทยาลัย\s*(.*?)(?=\sปีการศึกษา|$)',
-            'ปีการศึกษา': r'ปีการศึกษา\s*(.*?)(?=\sอาจารย์ที่ปรึกษา|$)',
-            'อาจารย์ที่ปรึกษา': r'อาจารย์ที่ปรึกษา\s*(.*?)(?=\sบทคัดย่อ|$)',
-            'บทคัดย่อ': r'บทคัดย่อ\s*(.*?)(?=\sคำสำคัญ|$)',
-            'คำสำคัญ': r'(?:คำสำคัญ:|คำสำคัญ)\s*(.*?)(?=\sTitle|$)',
-        }
-        results = {}
-        for key, pat in pattern.items():
-            m = re.search(pat, text, flags=re.DOTALL)
-            if m:
-                results[key] = m.group(1).strip()
-        return results
-
     async def save_file(self, file: UploadFile):
         ext = Path(file.filename).suffix
         safe_name = f"{uuid4().hex}{ext}"
@@ -59,7 +39,12 @@ class UploadServices:
 
         checker = SpellChecker(error_dict, threshold=10)
         suggestions = checker.compare(ocr_text, ext_text)
-        print(suggestions)
+        # print(suggestions)
+        if suggestions["better"] in ["equal", "text1"]: 
+            fields = checker.extract_fields(ocr_text)
+        else:
+            fields = checker.extract_fields(ext_text)
+        print(fields)
         # print("Text1:", result1)
         # print("Text2:", result2)
         # print(conclusion)
