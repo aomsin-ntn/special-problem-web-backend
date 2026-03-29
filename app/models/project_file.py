@@ -1,8 +1,9 @@
 from sqlmodel import SQLModel, Field
 from datetime import datetime
+from uuid import UUID, uuid4
 
 class ProjectFile(SQLModel, table=True):
-    file_id: str | None = Field(default=None, primary_key=True, max_length=10)
+    file_id: UUID | None = Field(default_factory=uuid4, primary_key=True)
     file_name: str = Field(max_length=255)
     file_path: str = Field(max_length=255)
     thumbnail_path: str = Field(default=None, max_length=255)
