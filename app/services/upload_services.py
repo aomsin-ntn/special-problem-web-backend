@@ -11,12 +11,13 @@ from app.services.spellchecker_services import SpellChecker
 from app.models.project import Project
 from app.models.project_file import ProjectFile
 from app.models.degree import Degree
-from app.models.user import User
+from app.models.user import User,Role
 from app.database import get_db
 from sqlmodel import Session
 from app.repository.project_repository import ProjectRepository
 from fastapi import Depends
 from sqlalchemy.ext.asyncio import AsyncSession
+from datetime import datetime
 
 class UploadServices:
     poppler_path = r"C:\poppler-25.07.0\Library\bin"
@@ -63,12 +64,24 @@ class UploadServices:
         else:
             fields2 = checker.extract_fields(ext_text2)
         print(fields1, ext_text2)
-        user = User(user_id="admin", user_name_th="Admin User", email="admin@example.com")
+        user = User(
+            user_id="U000000001",
+            student_id="65000001",
+            user_name_th="สมชาย ใจสู้",
+            user_name_en="Somchai Jaisoo",
+            degree_id="CS01",
+            role=Role.STUDENT,
+            email="somchai@example.com",
+            password_hash="$2b$12$examplehashedpassword"
+        )
         #result = session.query(Degree).filter(Degree.degree_name_th == fields1.get("ปริญญา")).first()
         result = None
         project_file = ProjectFile(
-            filename=file.filename,
-            path=str(dest)
+            file_id=uuid4(),
+            file_name="diagram.png",
+            file_path="/uploads/projects/diagram.png",
+            thumbnail_path="/uploads/thumbnails/diagram_thumb.png",
+            upload_time=datetime(2026, 3, 10, 9, 0)
         )
         project=Project(
             title_th=fields1.get("หัวข้อ", ""),
@@ -84,7 +97,8 @@ class UploadServices:
             file_id=project_file.file_id,
             download_count=0
         )
-
+        await ProjectRepository.create_user(session, user)
+        await ProjectRepository.create_project_file(session, project_file)
         await ProjectRepository.create_project(session, project)
 
         print(project)
