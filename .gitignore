@@ -4,3 +4,4 @@
 uploads/
 myenv/
 /__init__.py
+.gitignore
