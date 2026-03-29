@@ -17,3 +17,6 @@ mypy==1.8.0
 # Development Tools
 ipython==8.12.3
 jupyter==1.0.0
+
+sqlmodel==0.0.37
+psycopg2==2.9.11

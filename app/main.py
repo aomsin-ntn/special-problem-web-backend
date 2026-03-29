@@ -1,6 +1,8 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.api.routes import router
+from app.api.project import router
+from app.database import init_db
+
 
 app = FastAPI()
 
@@ -14,3 +16,8 @@ app.add_middleware(
 
 # Include API router
 app.include_router(router)
+
+@app.on_event("startup")
+async def startup_event():
+    init_db()
+    print("Database initialized and app is starting up...")
