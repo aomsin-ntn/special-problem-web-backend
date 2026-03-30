@@ -1,6 +1,6 @@
-/.venv
 __pycache__/
 *.pyc
 uploads/
 venv/
 .env
+thumbnails/
