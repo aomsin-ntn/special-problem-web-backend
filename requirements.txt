@@ -11,3 +11,6 @@ sqlmodel
 python-dotenv
 psycopg2-binary
 python-multipart
+authlib
+httpx
+itsdangerous
