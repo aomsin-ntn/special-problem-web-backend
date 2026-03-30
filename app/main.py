@@ -1,10 +1,13 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.api.project import router
+from app.api.project import router as project_router
+from app.api.authentication import router as auth_router
 from app.database import init_db
-
+from starlette.middleware.sessions import SessionMiddleware
 
 app = FastAPI()
+app.include_router(project_router)
+app.include_router(auth_router)
 
 app.add_middleware(
     CORSMiddleware,
@@ -14,8 +17,12 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Include API router
-app.include_router(router)
+app.add_middleware(
+    SessionMiddleware,
+    secret_key="your_secret_key_here",  # ควรใช้คีย์ที่ปลอดภัยและไม่เปิดเผย
+    same_site="lax",  # ปรับตามความต้องการ (lax, strict, none)
+    https_only=False,  # ควรตั้งเป็น True ใน production
+)
 
 @app.on_event("startup")
 async def startup_event():

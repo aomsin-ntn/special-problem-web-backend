@@ -11,7 +11,7 @@ class OCREngine:
 
     def __init__(self, poppler_path: str | None = None):
         self.poppler_path = poppler_path
-        #self.reader = easyocr.Reader(["th", "en"], gpu=False)
+        self.reader = easyocr.Reader(["th", "en"], gpu=False)
 
     @staticmethod
     def join_text(ocr_result, sep=" ") -> str:

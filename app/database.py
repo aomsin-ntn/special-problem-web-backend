@@ -14,6 +14,7 @@ from app.models.project_author import ProjectAuthor
 from app.models.project_advisor import ProjectAdvisor
 from app.models.project_keyword import ProjectKeyword
 from dotenv import load_dotenv
+from app.models.session import Session as UserSession
 import os
 
 load_dotenv()

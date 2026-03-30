@@ -31,6 +31,12 @@ async def upload(
 ):
     return await service.save_file(file, page=page, session=db)
 
+@router.get("/most_downloaded")
+async def get_most_downloaded_projects(db: Annotated[Session, Depends(get_db)]):
+    projects = await ProjectServices.get_most_downloaded_projects(db)
+    print(projects)
+    return projects
+
 # @router.patch("/delete")
 # async def delete_project(
 #     project_id: int = Query(..., description="ID of the project to delete"),
