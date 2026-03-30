@@ -19,26 +19,34 @@ class SpellChecker:
             "science", "engineering", "analysis", "learning"
         ])
 
+    def clean_text(self,text):
+        if not text:
+            return text
+
+        text = text.replace("\n", " ")
+        text = re.sub(r'\s+', ' ', text)
+        text = text.strip()
+        return text
+
     def extract_fields(self, text: str) -> dict:
         pattern = {
-            'หัวข้อ': r'(?:หัวข้อ(?:ปัญหาพิเศษ|สหกิจศึกษา|โครงงานพิเศษ)|สหกิจศึกษา)\s*(.*?)(?=\sชื่อนักศึกษา|$)',
-            'ชื่อนักศึกษา': r'ชื่อนักศึกษา\s*(.*?)(?=\sปริญญา|$)',
-            'ปริญญา': r'ปริญญา\s*(.*?)(?=\sภาควิชา|$)',
-            'ภาควิชา': r'ภาควิชา\s*(.*?)(?=\sคณะ|ปีการศึกษา|$)',
-            'คณะ': r'คณะ\s*(.*?)(?=\sมหาวิทยาลัย|$)',
-            'มหาวิทยาลัย': r'มหาวิทยาลัย\s*(.*?)(?=\sปีการศึกษา|$)',
-            'ปีการศึกษา': r'ปีการศึกษา\s*(.*?)(?=\sอาจารย์ที่ปรึกษา|$)',
-            'อาจารย์ที่ปรึกษา': r'อาจารย์ที่ปรึกษา\s*(.*?)(?=\sบทคัดย่อ|$)',
-            'บทคัดย่อ': r'บทคัดย่อ\s*(.*?)(?=\sคำสำคัญ|$)',
-            'คำสำคัญ': r'(?:คำสำคัญ:|คำสำคัญ)\s*(.*?)(?=\sหัวข้อ|\sTitle|$)'
-        }
+        'Title': r'(?:หัวข้อ(?:ปัญหาพิเศษ|สหกิจศึกษา|โครงงานพิเศษ)|สหกิจศึกษา|Title:?|TITLE:?|title:?)\s*(.*?)(?=\s*(?:ชื่อนักศึกษา|Students?|$))',
+        'Name': r'(?:ชื่อนักศึกษา|Students?)\s*(.*?)(?=\s*(?:ปริญญา|Degree|$))',
+        'Degree': r'(?:ปริญญา|Degree)\s*(.*?)(?=\s*(?:ภาควิชา|Department|$))',
+        'Department': r'(?:ภาควิชา|Department)\s*(.*?)(?=\s*(?:คณะ|Faculty|$))',
+        'Faculty': r'(?:คณะ|Faculty)\s*(.*?)(?=\s*(?:มหาวิทยาลัย|University|$))',
+        'University': r'(?:มหาวิทยาลัย|University)\s*(.*?)(?=\s*(?:ปีการศึกษา|Academic\s*Year:?|Academic\s*Year|$))',
+        'AcademicYear': r'(?:ปีการศึกษา|Academic\s*Year:?|AcademicYear:?|AcademicYear)\s*(.*?)(?=\s*(?:อาจารย์ที่ปรึกษา|Advisor|$))',
+        'Advisor': r'(?:อาจารย์ที่ปรึกษา|Advisor)\s*(.*?)(?=\s*(?:บทคัดย่อ|Abstract|$))',
+        'Abstract': r'(?:บทคัดย่อ|Abstract)\s*(.*?)(?=\s*(?:คำสำคัญ|Keywords|$))',
+        'Keywords': r'(?:คำสำคัญ:?|Keywords:?)\s*(.*?)(?=\s*(?:หัวข้อ|Title|$))'
+    }
         results = {}
         for key, pat in pattern.items():
             m = re.search(pat, text, flags=re.DOTALL)
             if m:
                 results[key] = m.group(1).strip()
         return results
-
 
     # -------------------------
     # language check
@@ -162,8 +170,8 @@ class SpellChecker:
         result2 = self.check_spelling(cleaned2)
 
         if result1["error_percent"] > result2["error_percent"]:
-            return {"better": "text2", "result": result2}
+            return {"choose": "text2", "result": result2}
         elif result1["error_percent"] < result2["error_percent"]:
-            return {"better": "text1", "result": result1}
+            return {"choose": "text1", "result": result1}
         else:
-            return {"better": "equal", "result": result1}
+            return {"choose": "text1", "result": result1}

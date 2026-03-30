@@ -23,3 +23,20 @@ class ProjectServices:
         repository = ProjectRepository()
         new_project = await repository.create_project(db, project_data)
         return new_project
+
+    @staticmethod
+    async def get_most_downloaded_projects(db: Session):
+        projects = await ProjectRepository.get_most_downloaded_projects(db)
+        result = {}
+        for project, keyword in projects:
+            pid = project.project_id
+
+            if pid not in result:
+                project_dict = project.dict()
+                project_dict["keywords"] = []
+                result[pid] = project_dict
+
+            result[pid]["keywords"].append(keyword.dict())
+
+            final_result = list(result.values())
+        return final_result
