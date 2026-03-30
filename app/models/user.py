@@ -11,10 +11,10 @@ class Role(str,Enum):
 class User(SQLModel, table=True):
     user_id: UUID | None = Field(default_factory=uuid4, primary_key=True)
     student_id: str = Field(max_length=8, unique=True)
-    user_name_th: str = Field(max_length=150)
-    user_name_en: str = Field(max_length=150)
+    user_name_th: str | None = Field(max_length=150)
+    user_name_en: str | None = Field(max_length=150)
     degree_id: UUID | None = Field(foreign_key="degrees.degree_id")
     role: Role = Field(sa_column=Field(default=Role.STUDENT, nullable=False))
     email: str = Field(max_length=255, unique=True)
-    password_hash: str = Field(max_length=255)
+    password_hash: str | None = Field(max_length=255)
     __tablename__ = "users"
