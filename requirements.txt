@@ -1,0 +1,13 @@
+uvicorn[standard]
+fastapi
+opencv-python
+pdf2image
+easyocr
+pymupdf
+requests
+attacut
+pythainlp
+sqlmodel
+python-dotenv
+psycopg2-binary
+python-multipart
