@@ -63,7 +63,8 @@ async def callback( db: Annotated[AsyncSession, Depends(get_db)], request:Reques
     db.add(session)
     db.commit()
 
-    response = RedirectResponse(url="/auth/protected")
+    frontend_url = "http://localhost:5173/" 
+    response = RedirectResponse(url=frontend_url)
     response.set_cookie(
         key="session_id",
         value=str(session.session_id),

@@ -19,6 +19,7 @@ from app.repository.project_repository import ProjectRepository
 from fastapi import Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 from datetime import datetime
+from app.repository.user_repository import UserRepository
 
 class UploadServices:
     poppler_path = r"C:\poppler-25.07.0\Library\bin"
@@ -102,23 +103,6 @@ class UploadServices:
             uploaded_at=datetime.utcnow
         )
 
-        project_file2 = ProjectFile(
-            file_id=uuid4(),
-            file_name=file.filename,
-            file_path=str(dest),
-            thumbnail_path=thumbnails_path, 
-            uploaded_at=datetime.utcnow
-        )
-
-        # project_detail = Project(
-        #     title_th=fields1.get("Title", ""),
-        #     title_en=fields2.get("Title",""),
-        #     abstract_th=fields1.get("Abstract",""),
-        #     abstract_en=fields1.get("Abstract",""),
-        #     academic_year=fields1.get("AcademicYear"),
-        #     degree_id=degree.id if degree else None,
-        #     created_by=
-        # )
 
         """" !!!make tge field2 (support the EN)"""
         project=Project(
@@ -135,6 +119,43 @@ class UploadServices:
             file_id=project_file.file_id,
             downloaded_count=0
         )
+
+        user2 = User(
+            user_id=uuid4(),
+            student_id="65555555",
+            user_name_th="ส้มโต่ย ส้มโต้ย",
+            user_name_en="Somtoi Somtoy",
+            degree_id="CS01",
+            role=Role.STUDENT,
+            email="lnwsomtoyza@kmitl.ac.th",
+            password_hash=None
+        )
+
+        project_file2 = ProjectFile(
+            file_id=uuid4(),
+            file_name=file.filename,
+            file_path=str(dest),
+            thumbnail_path=thumbnail_path, 
+            uploaded_at=datetime.utcnow
+        )
+
+        project_detail2 = Project(
+            title_th=fields1.get("Title", ""),
+            title_en=fields2.get("Title",""),
+            abstract_th=fields1.get("Abstract",""),
+            abstract_en=fields1.get("Abstract",""),
+            academic_year=fields1.get("AcademicYear",""),
+            degree_id= None,
+            created_by=user2.user_id,
+            is_active=True,
+            file_id=project_file2.file_id,
+            download_count=0
+        )
+
+        await UserRepository.create_user(session, user)
+        await ProjectRepository.create_project_file(session, project_file)
+        await ProjectRepository.create_project(session, project)
+
 
         """ !!! split the file from repository for more clean code"""
         # await UserRepository.create_user(session, user)
