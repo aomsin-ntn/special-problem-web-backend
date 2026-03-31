@@ -19,7 +19,7 @@ from app.schemas.root_schema import GetProjectRequestParams
 class ProjectRepository:
     @staticmethod
     async def get_most_downloaded_projects(db: Session):
-        # result = db.query(Project,Keywords).order_by(Project.download_count.desc()).limit(5).all()
+        # result = db.query(Project,Keywords).order_by(Project.downloaded_count.desc()).limit(5).all()
         result = db.exec(
             select(Project, Keyword)
             .join(ProjectKeyword, Project.project_id == ProjectKeyword.project_id)

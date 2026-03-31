@@ -7,5 +7,5 @@ class ProjectFile(SQLModel, table=True):
     file_name: str = Field(max_length=255)
     file_path: str = Field(max_length=255)
     thumbnail_path: str = Field(default=None, max_length=255)
-    upload_time: datetime = Field(default_factory=datetime.utcnow)
+    uploaded_at: datetime = Field(default_factory=datetime.utcnow)
     __tablename__ = "project_files"

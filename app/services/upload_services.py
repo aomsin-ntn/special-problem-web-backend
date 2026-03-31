@@ -99,7 +99,7 @@ class UploadServices:
             file_name=file.filename,
             file_path=dest,
             thumbnail_path="/uploads/thumbnails/diagram_thumb.png", 
-            upload_time=datetime.utcnow
+            uploaded_at=datetime.utcnow
         )
 
         """" !!!make tge field2 (support the EN)"""
@@ -112,10 +112,10 @@ class UploadServices:
             abstract_en="Hello",
             academic_year=fields1.get("ปิการศึกษา", ""),
             degree_id=degree.id if degree else None,
-            create_by=user.user_id,
+            created_by=user.user_id,
             is_active=False,
             file_id=project_file.file_id,
-            download_count=0
+            downloaded_count=0
         )
 
         """ !!! split the file from repository for more clean code"""
