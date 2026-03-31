@@ -33,8 +33,8 @@ oauth.register(
 
 @router.get("/login")
 async def login(request:Request):
-    redirect_uri = "http://127.0.0.1:8000/auth/callback"
-    return await oauth.google.authorize_redirect(request, redirect_uri)
+    redirect_url = "http://127.0.0.1:8000/auth/callback"
+    return await oauth.google.authorize_redirect(request, redirect_url)
 
 @router.get("/callback")
 async def callback( db: Annotated[AsyncSession, Depends(get_db)], request:Request,response:Response):
