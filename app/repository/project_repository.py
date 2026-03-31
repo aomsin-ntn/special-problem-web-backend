@@ -113,13 +113,17 @@ class ProjectRepository:
             order_by = Project.created_at.desc()  # Default sorting
 
         projects = db.exec(
-            select(Project, User, Advisor, Keyword)
+            select(Project, User, Advisor, Keyword, Degree, Department, Faculty)
             .join(ProjectAuthor, Project.project_id == ProjectAuthor.project_id)
             .join(User, ProjectAuthor.user_id == User.user_id)
             .join(ProjectAdvisor, Project.project_id == ProjectAdvisor.project_id)
             .join(Advisor, ProjectAdvisor.advisor_id == Advisor.advisor_id)
             .join(ProjectKeyword, Project.project_id == ProjectKeyword.project_id)
             .join(Keyword, ProjectKeyword.keyword_id == Keyword.keyword_id)
+            .join(Degree, User.degree_id == Degree.degree_id)
+            .join(DegreeDepartment, Degree.degree_id == DegreeDepartment.degree_id)
+            .join(Department, DegreeDepartment.department_id == Department.department_id)
+            .join(Faculty, Department.faculty_id == Faculty.faculty_id)
             .where(*filters, Project.is_active == True)
             .order_by(order_by)
             .offset((request.page - 1) * request.limit)
@@ -127,7 +131,7 @@ class ProjectRepository:
         ).all()
 
         result = {}
-        for project, user, advisor, keyword in projects:
+        for project, user, advisor, keyword , degree, department, faculty in projects:
             pid = project.project_id
 
             if pid not in result:
@@ -135,7 +139,10 @@ class ProjectRepository:
                     "project": project.model_dump(),
                     "users": [],
                     "advisors": [],
-                    "keywords": []
+                    "keywords": [],
+                    "degrees": degree.model_dump(),
+                    "departments": department.model_dump(),
+                    "facultys": faculty.model_dump()
                 }
 
             # ✅ กันซ้ำใน list
@@ -149,19 +156,6 @@ class ProjectRepository:
                 result[pid]["keywords"].append(keyword.model_dump())
 
         return list(result.values())
-
-    @staticmethod
-    async def get_master_data(db: Session):
-        faculties = db.exec(select(Faculty)).all()
-        degrees = db.exec(select(Degree)).all()
-        departments = db.exec(select(Department)).all()
-        advisors = db.exec(select(Advisor)).all()
-        return {
-            "faculties": [faculty.model_dump() for faculty in faculties],
-            "degrees": [degree.model_dump() for degree in degrees],
-            "departments": [department.model_dump() for department in departments],
-            "advisors": [advisor.model_dump() for advisor in advisors]
-        }
 
     @staticmethod
     async def get_faculty(db: Session):
@@ -185,3 +179,31 @@ class ProjectRepository:
                 result[fid]["departments"].append(department.model_dump())
 
         return list(result.values())
+
+    @staticmethod
+    async def get_master_faculties(db:Session):
+        faculty = db.exec(
+            select(Faculty)
+        ).all()
+        return faculty
+
+    @staticmethod
+    async def get_master_advisors(db:Session):
+        advisors = db.exec(
+            select(Advisor)
+        ).all()
+        return advisors
+
+    @staticmethod
+    async def get_master_departments(db:Session):
+        departments = db.exec(
+            select(Department)
+        ).all()
+        return departments
+
+    @staticmethod
+    async def get_master_degrees(db:Session):
+        degrees = db.exec(
+            select(Degree)      
+        ).all()
+        return degrees
