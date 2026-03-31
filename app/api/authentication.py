@@ -69,15 +69,18 @@ async def callback( db: Annotated[AsyncSession, Depends(get_db)], request:Reques
         key="session_id",
         value=str(session.session_id),
         httponly=True,
-        samesite="lax",
-        secure=False,  # ควรตั้งเป็น True ใน production
-        max_age=60 * 60 * 24 * 7  # 7 วัน
+        samesite="none",
+        secure=True,  # ควรตั้งเป็น True ใน production
+        max_age=60 * 60 * 24 * 7,  # 7 วัน
+        path="/"
     )
     return response
 
 async def get_current_user(request: Request, db: Annotated[AsyncSession, Depends(get_db)]) -> User | None:
+    print(request.cookies)
     session_id = request.cookies.get("session_id")
     if not session_id:
+        print("ล็อกอินไม่สำเร็จ")
         raise HTTPException(status_code=401, detail="Not authenticated")
     session = db.query(Session).filter(Session.session_id == session_id).first()
     if not session or session.expires_at < datetime.utcnow():
