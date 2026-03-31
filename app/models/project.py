@@ -15,7 +15,7 @@ class Project(SQLModel, table=True):
     academic_year: str = Field(max_length=4)
     degree_id: UUID | None= Field( foreign_key="degrees.degree_id")
     create_by: UUID = Field(foreign_key="users.user_id")
-    create_date: datetime = Field(default_factory=datetime.utcnow)
+    create_at: datetime = Field(default_factory=datetime.utcnow)
     update_by: UUID | None = Field(foreign_key="users.user_id")
     update_time: datetime | None = Field(default_factory=datetime.utcnow)
     is_active: bool = Field(default=True)

@@ -24,6 +24,6 @@ class GetProjectRequestParams(BaseModel):
     limit: int = 10
     search: str | None = None
     year: list[str] | None = None
-    sorted_by: Literal["downloaded","recent"]
+    sorted_by: Literal["downloaded","created_at"] | None = None
     order: Literal["asc", "desc"]
 

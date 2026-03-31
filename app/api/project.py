@@ -11,6 +11,7 @@ from app.database import get_db
 from app.services.project_services import ProjectServices
 from app.schemas.root_schema import GetProjectRequestParams
 from sqlalchemy.ext.asyncio import AsyncSession
+from uuid import UUID
 
 router = APIRouter(prefix="/project")
 
@@ -20,7 +21,7 @@ async def get_projects(
     request: Annotated[GetProjectRequestParams, Query()]
 ):
     projects = await ProjectServices.get_projects(db, request)
-    return JSONResponse(content={"message": "Projects retrieved successfully", "projects": projects})
+    return projects
 
 @router.post("/upload")
 async def upload(
@@ -37,13 +38,23 @@ async def get_most_downloaded_projects(db: Annotated[Session, Depends(get_db)]):
     print(projects)
     return projects
 
-# @router.patch("/delete")
-# async def delete_project(
-#     project_id: int = Query(..., description="ID of the project to delete"),
-#     db: Annotated[Session, Depends(get_db)]
-# ):
-#     result = await ProjectServices.delete_project(db, project_id)
-#     if result:
-#         return JSONResponse(content={"message": "Project deleted successfully"})
-#     else:
-#         return JSONResponse(content={"message": "Project not found"}, status_code=404)
+@router.patch("/delete")
+async def delete_project(
+    db: Annotated[Session, Depends(get_db)],
+    project_id: UUID,
+):
+    result = await ProjectServices.delete_project(db, project_id)
+    if result:
+        return JSONResponse(content={"message": "Project deleted successfully"})
+    else:
+        return JSONResponse(content={"message": "Project not found"}, status_code=404)
+
+@router.get("/{project_id}")
+async def get_project_details(
+    db: Annotated[Session, Depends(get_db)],
+    project_id: UUID
+):
+    details = await ProjectServices.get_project_details(db, project_id)
+    return details
+
+    
