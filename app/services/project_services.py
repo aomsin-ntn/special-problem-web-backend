@@ -60,3 +60,18 @@ class ProjectServices:
 
         final_result = list(result.values())
         return final_result
+
+    @staticmethod
+    async def get_master_data(db: Session):
+        master_data = await ProjectRepository.get_master_data(db)
+        faculties = master_data["faculties"]
+        degrees = master_data["degrees"]
+        departments = master_data["departments"]
+        advisors = master_data["advisors"]
+
+        return {
+            "faculties": faculties,
+            "degrees": degrees,
+            "departments": departments,
+            "advisors": advisors
+        }

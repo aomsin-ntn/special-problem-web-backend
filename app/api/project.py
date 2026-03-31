@@ -49,10 +49,17 @@ async def get_most_downloaded_projects(db: Annotated[Session, Depends(get_db)]):
     print(projects)
     return projects
 
-@router.get("/{project_id}")
+@router.get("/details/{project_id}")
 async def get_project_details(
     db: Annotated[Session, Depends(get_db)],
     project_id: UUID
 ):
     details = await ProjectServices.get_project_details(db, project_id)
     return details
+
+@router.get("/master")
+async def get_master_data(
+    db: Annotated[Session, Depends(get_db)]
+):
+    master_data = await ProjectServices.get_master_data(db)
+    return master_data

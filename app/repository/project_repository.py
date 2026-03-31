@@ -149,3 +149,16 @@ class ProjectRepository:
                 result[pid]["keywords"].append(keyword.model_dump())
 
         return list(result.values())
+
+    @staticmethod
+    async def get_master_data(db: Session):
+        faculties = db.exec(select(Faculty)).all()
+        degrees = db.exec(select(Degree)).all()
+        departments = db.exec(select(Department)).all()
+        advisors = db.exec(select(Advisor)).all()
+        return {
+            "faculties": [faculty.model_dump() for faculty in faculties],
+            "degrees": [degree.model_dump() for degree in degrees],
+            "departments": [department.model_dump() for department in departments],
+            "advisors": [advisor.model_dump() for advisor in advisors]
+        }
