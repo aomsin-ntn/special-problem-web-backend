@@ -32,7 +32,7 @@ class ProjectRepository:
     @staticmethod
     async def get_project_details(db: Session, project_id: UUID):
         result = db.exec(
-            select(Project, User, Keyword, Faculty,Degree, Department, ProjectFile, Advisor, Keyword)
+            select(Project, User, Keyword, Faculty, Degree, Department, ProjectFile, Advisor)
             .join(ProjectAuthor, Project.project_id == ProjectAuthor.project_id)
             .join(User, ProjectAuthor.user_id == User.user_id)
             .join(Degree, Project.degree_id == Degree.degree_id)
@@ -162,3 +162,26 @@ class ProjectRepository:
             "departments": [department.model_dump() for department in departments],
             "advisors": [advisor.model_dump() for advisor in advisors]
         }
+
+    @staticmethod
+    async def get_faculty(db: Session):
+        faculty = db.exec(
+            select(Faculty, Department)
+            .join(Department, Faculty.faculty_id == Department.faculty_id)
+            ).all()
+
+        result = {} 
+        for faculty,department in faculty:
+            fid = faculty.faculty_id
+
+            if fid not in result:
+                result[fid] = {
+                    "faculty": faculty.model_dump(),
+                    "departments": [],
+                }
+
+            # ✅ กันซ้ำใน list
+            if department.department_id not in [u["department_id"] for u in result[fid]["departments"]]:
+                result[fid]["departments"].append(department.model_dump())
+
+        return list(result.values())

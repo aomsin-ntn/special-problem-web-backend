@@ -12,6 +12,7 @@ from app.services.project_services import ProjectServices
 from app.schemas.root_schema import GetProjectRequestParams
 from sqlalchemy.ext.asyncio import AsyncSession
 from uuid import UUID
+from app.api.authentication import get_current_user
 
 router = APIRouter(prefix="/project")
 
@@ -20,7 +21,7 @@ async def upload(
     db: Annotated[AsyncSession, Depends(get_db)],
     file: UploadFile = File(...),
     service: UploadServices = Depends(),
-    page: list[int] = Query([1], description="Page numbers for pagination")
+    page: list[int] = Query([1], description="Page numbers for pagination",)
 ):
     return await service.save_file(file, page=page, session=db)
 
@@ -63,3 +64,10 @@ async def get_master_data(
 ):
     master_data = await ProjectServices.get_master_data(db)
     return master_data
+
+@router.get("/get_faculty")
+async def get_faculty(
+    db: Annotated[Session, Depends(get_db)]
+):
+    faculty = await ProjectServices.get_faculty(db)
+    return faculty

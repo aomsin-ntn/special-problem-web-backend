@@ -12,7 +12,9 @@ from uuid import uuid4
 from datetime import datetime, timedelta
 from fastapi import HTTPException
 from fastapi.responses import RedirectResponse
-
+from uuid import UUID
+from app.services.project_services import ProjectServices
+from app.repository.user_repository import UserRepository
 
 
 router = APIRouter(prefix="/auth")
@@ -70,9 +72,9 @@ async def callback( db: Annotated[AsyncSession, Depends(get_db)], request:Reques
         secure=False,  # ควรตั้งเป็น True ใน production
         max_age=60 * 60 * 24 * 7  # 7 วัน
     )
-    return {"user_info": user_info}
+    return response
 
-def get_current_user(request: Request, db: Annotated[AsyncSession, Depends(get_db)]) -> User | None:
+async def get_current_user(request: Request, db: Annotated[AsyncSession, Depends(get_db)]) -> User | None:
     session_id = request.cookies.get("session_id")
     if not session_id:
         raise HTTPException(status_code=401, detail="Not authenticated")
@@ -82,10 +84,24 @@ def get_current_user(request: Request, db: Annotated[AsyncSession, Depends(get_d
     user = db.query(User).filter(User.user_id == session.user_id).first()
     return user
 
-    
 @router.get("/protected")
 async def protected(user=Depends(get_current_user)):
     return{
         "message": "You are logged in",
         "user": user
     }
+
+@router.post("/logout")
+async def logout(request: Request, response: Response, db: Annotated[AsyncSession, Depends(get_db)]):
+    session_id = request.cookies.get("session_id")
+    if session_id:
+        session = db.query(Session).filter(Session.session_id == session_id).first()
+        if session:
+            db.delete(session)
+            db.commit()
+    response.delete_cookie(key="session_id")
+    return {"message": "Logged out successfully"}
+
+@router.get("/me")
+async def get_profile(user=Depends(get_current_user)):
+    return user

@@ -2,6 +2,7 @@
 
 from pydantic import BaseModel
 from typing import Literal
+from uuid import UUID
 
 
 class RootResponse(BaseModel):
@@ -26,4 +27,3 @@ class GetProjectRequestParams(BaseModel):
     year: list[str] | None = None
     sorted_by: Literal["downloaded_count","created_at"] | None = None
     order: Literal["asc", "desc"]
-

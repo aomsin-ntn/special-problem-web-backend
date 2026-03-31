@@ -1,6 +1,8 @@
 from app.repository.project_repository import ProjectRepository
 from sqlmodel import Session
 from app.schemas.root_schema import GetProjectRequestParams
+from uuid import UUID
+from app.repository.user_repository import UserRepository
 
 class ProjectServices:
     @staticmethod
@@ -41,7 +43,7 @@ class ProjectServices:
     async def get_project_details(db: Session, project_id: int):
         details = await ProjectRepository.get_project_details(db, project_id)
         result = {}
-        for project, user, keyword, faculty, degree, department, project_file, advisor, keyword in details:
+        for project, user, keyword, faculty, degree, department, project_file, advisor in details:
             pid = project.project_id
 
             if pid not in result:
@@ -55,8 +57,11 @@ class ProjectServices:
                 project_dict["advisor"] = advisor.dict()
                 result[pid] = project_dict
 
-            result[pid]["authors"].append(user.dict())
-            result[pid]["keywords"].append(keyword.dict())
+            if user.user_id not in [u["user_id"] for u in result[pid]["authors"]]:
+                result[pid]["authors"].append(user.model_dump())
+
+            if keyword.keyword_id not in [k["keyword_id"] for k in result[pid]["keywords"]]:
+                result[pid]["keywords"].append(keyword.model_dump())
 
         final_result = list(result.values())
         return final_result
@@ -75,3 +80,8 @@ class ProjectServices:
             "departments": departments,
             "advisors": advisors
         }
+
+    @staticmethod
+    async def get_faculty(db: Session):
+        faculty = await ProjectRepository.get_faculty(db)
+        return faculty
