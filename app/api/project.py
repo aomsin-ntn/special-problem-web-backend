@@ -58,13 +58,6 @@ async def get_project_details(
     details = await ProjectServices.get_project_details(db, project_id)
     return details
 
-@router.get("/master")
-async def get_master_data(
-    db: Annotated[Session, Depends(get_db)]
-):
-    master_data = await ProjectServices.get_master_data(db)
-    return master_data
-
 @router.get("/get_faculty")
 async def get_faculty(
     db: Annotated[Session, Depends(get_db)]
