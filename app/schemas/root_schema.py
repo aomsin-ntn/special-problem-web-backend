@@ -20,7 +20,7 @@ class ItemResponse(BaseModel):
     q: str | None = None
 
 class GetProjectRequestParams(BaseModel):
-    department: list[str] | None = None
+    department: list[UUID] | None = None
     page: int = 1
     limit: int = 10
     search: str | None = None
