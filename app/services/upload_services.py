@@ -102,6 +102,24 @@ class UploadServices:
             uploaded_at=datetime.utcnow
         )
 
+        project_file2 = ProjectFile(
+            file_id=uuid4(),
+            file_name=file.filename,
+            file_path=str(dest),
+            thumbnail_path=thumbnails_path, 
+            uploaded_at=datetime.utcnow
+        )
+
+        # project_detail = Project(
+        #     title_th=fields1.get("Title", ""),
+        #     title_en=fields2.get("Title",""),
+        #     abstract_th=fields1.get("Abstract",""),
+        #     abstract_en=fields1.get("Abstract",""),
+        #     academic_year=fields1.get("AcademicYear"),
+        #     degree_id=degree.id if degree else None,
+        #     created_by=
+        # )
+
         """" !!!make tge field2 (support the EN)"""
         project=Project(
             title_th=fields1.get("หัวข้อ", ""),

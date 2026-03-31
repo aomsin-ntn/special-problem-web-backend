@@ -67,21 +67,26 @@ class ProjectServices:
         return final_result
 
     @staticmethod
-    async def get_master_data(db: Session):
-        master_data = await ProjectRepository.get_master_data(db)
-        faculties = master_data["faculties"]
-        degrees = master_data["degrees"]
-        departments = master_data["departments"]
-        advisors = master_data["advisors"]
-
-        return {
-            "faculties": faculties,
-            "degrees": degrees,
-            "departments": departments,
-            "advisors": advisors
-        }
-
-    @staticmethod
     async def get_faculty(db: Session):
         faculty = await ProjectRepository.get_faculty(db)
         return faculty
+
+    @staticmethod
+    async def get_master_faculties(db:Session):
+        faculty = await ProjectRepository.get_master_faculties(db)
+        return faculty
+
+    @staticmethod
+    async def get_master_departments(db:Session):
+        departments = await ProjectRepository.get_master_departments(db)
+        return departments
+
+    @staticmethod
+    async def get_master_advisors(db:Session):
+        advisors = await ProjectRepository.get_master_advisors(db)
+        return advisors
+
+    @staticmethod
+    async def get_master_degrees(db:Session):
+        degrees = await ProjectRepository.get_master_degrees(db)
+        return degrees
