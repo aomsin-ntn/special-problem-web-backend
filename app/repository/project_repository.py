@@ -95,7 +95,7 @@ class ProjectRepository:
             )
 
         if request.department:
-            filters.append(Department.department_name_en.in_(request.department))
+            filters.append(Department.department_id.in_(request.department))
         if request.year:
             filters.append(Project.academic_year.in_(request.year))
         if request.sorted_by:
