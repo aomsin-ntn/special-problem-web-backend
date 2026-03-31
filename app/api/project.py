@@ -15,14 +15,6 @@ from uuid import UUID
 
 router = APIRouter(prefix="/project")
 
-@router.get("/")
-async def get_projects(
-    db: Annotated[Session, Depends(get_db)],
-    request: Annotated[GetProjectRequestParams, Query()]
-):
-    projects = await ProjectServices.get_projects(db, request)
-    return projects
-
 @router.post("/upload")
 async def upload(
     db: Annotated[AsyncSession, Depends(get_db)],
@@ -31,12 +23,6 @@ async def upload(
     page: list[int] = Query([1], description="Page numbers for pagination")
 ):
     return await service.save_file(file, page=page, session=db)
-
-@router.get("/most_downloaded")
-async def get_most_downloaded_projects(db: Annotated[Session, Depends(get_db)]):
-    projects = await ProjectServices.get_most_downloaded_projects(db)
-    print(projects)
-    return projects
 
 @router.patch("/delete")
 async def delete_project(
@@ -49,6 +35,20 @@ async def delete_project(
     else:
         return JSONResponse(content={"message": "Project not found"}, status_code=404)
 
+@router.get("/")
+async def get_projects(
+    db: Annotated[Session, Depends(get_db)],
+    request: Annotated[GetProjectRequestParams, Query()]
+):
+    projects = await ProjectServices.get_projects(db, request)
+    return projects
+
+@router.get("/most_downloaded")
+async def get_most_downloaded_projects(db: Annotated[Session, Depends(get_db)]):
+    projects = await ProjectServices.get_most_downloaded_projects(db)
+    print(projects)
+    return projects
+
 @router.get("/{project_id}")
 async def get_project_details(
     db: Annotated[Session, Depends(get_db)],
@@ -56,5 +56,3 @@ async def get_project_details(
 ):
     details = await ProjectServices.get_project_details(db, project_id)
     return details
-
-    
