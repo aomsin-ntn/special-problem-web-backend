@@ -24,7 +24,7 @@ class ProjectRepository:
             select(Project, Keyword)
             .join(ProjectKeyword, Project.project_id == ProjectKeyword.project_id)
             .join(Keyword, ProjectKeyword.keyword_id == Keyword.keyword_id)
-            .order_by(Project.download_count.desc())
+            .order_by(Project.downloaded_count.desc())
             .limit(5)
         ).all()
         return result
@@ -99,18 +99,18 @@ class ProjectRepository:
         if request.year:
             filters.append(Project.academic_year.in_(request.year))
         if request.sorted_by:
-            if request.sorted_by == "downloaded":
+            if request.sorted_by == "downloaded_count":
                 if request.order == "asc":
-                    order_by = Project.download_count.asc()
+                    order_by = Project.downloaded_count.asc()
                 else:
-                    order_by = Project.download_count.desc()
+                    order_by = Project.downloaded_count.desc()
             elif request.sorted_by == "created_at":
                 if request.order == "asc":
-                    order_by = Project.create_at.asc()
+                    order_by = Project.created_at.asc()
                 else:
-                    order_by = Project.create_at.desc()
+                    order_by = Project.created_at.desc()
         else:
-            order_by = Project.create_at.desc()  # Default sorting
+            order_by = Project.created_at.desc()  # Default sorting
 
         projects = db.exec(
             select(Project, User, Advisor, Keyword)
