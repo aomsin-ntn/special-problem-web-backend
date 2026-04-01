@@ -15,6 +15,7 @@ from app.models.degree_department import DegreeDepartment
 from app.models.faculty import Faculty
 from uuid import UUID
 from app.schemas.root_schema import GetProjectRequestParams
+from sqlalchemy import func
 
 class ProjectRepository:
     @staticmethod
@@ -98,6 +99,7 @@ class ProjectRepository:
             filters.append(Department.department_id.in_(request.department))
         if request.year:
             filters.append(Project.academic_year.in_(request.year))
+            
         if request.sorted_by:
             if request.sorted_by == "downloaded_count":
                 if request.order == "asc":
@@ -110,17 +112,17 @@ class ProjectRepository:
                 else:
                     order_by = Project.created_at.desc()
         else:
-            order_by = Project.created_at.desc()  # Default sorting
+            order_by = Project.created_at.desc()
 
-        projects = db.exec(
-            select(Project, User, Advisor, Keyword, Degree, Department, Faculty)
+        paged_projects = db.exec(
+            select(Project).distinct()
             .join(ProjectAuthor, Project.project_id == ProjectAuthor.project_id)
             .join(User, ProjectAuthor.user_id == User.user_id)
             .join(ProjectAdvisor, Project.project_id == ProjectAdvisor.project_id)
             .join(Advisor, ProjectAdvisor.advisor_id == Advisor.advisor_id)
             .join(ProjectKeyword, Project.project_id == ProjectKeyword.project_id)
             .join(Keyword, ProjectKeyword.keyword_id == Keyword.keyword_id)
-            .join(Degree, User.degree_id == Degree.degree_id)
+            .join(Degree, Project.degree_id == Degree.degree_id)
             .join(DegreeDepartment, Degree.degree_id == DegreeDepartment.degree_id)
             .join(Department, DegreeDepartment.department_id == Department.department_id)
             .join(Faculty, Department.faculty_id == Faculty.faculty_id)
@@ -130,8 +132,46 @@ class ProjectRepository:
             .limit(request.limit)
         ).all()
 
+        project_ids = [p.project_id for p in paged_projects]
+
+        if not project_ids:
+            projects = []
+        else:
+            projects = db.exec(
+                select(Project, User, Advisor, Keyword, Faculty, Department)
+                .join(ProjectAuthor, Project.project_id == ProjectAuthor.project_id)
+                .join(User, ProjectAuthor.user_id == User.user_id)
+                .join(ProjectAdvisor, Project.project_id == ProjectAdvisor.project_id)
+                .join(Advisor, ProjectAdvisor.advisor_id == Advisor.advisor_id)
+                .join(ProjectKeyword, Project.project_id == ProjectKeyword.project_id)
+                .join(Keyword, ProjectKeyword.keyword_id == Keyword.keyword_id)
+                .join(Degree, Project.degree_id == Degree.degree_id)
+                .join(DegreeDepartment, Degree.degree_id == DegreeDepartment.degree_id)
+                .join(Department, DegreeDepartment.department_id == Department.department_id)
+                .join(Faculty, Department.faculty_id == Faculty.faculty_id)
+                .where(Project.project_id.in_(project_ids))
+                .order_by(order_by)
+            ).all()
+
+        total_items = db.exec(
+            select(func.count(func.distinct(Project.project_id)))
+            .join(ProjectAuthor, Project.project_id == ProjectAuthor.project_id)
+            .join(User, ProjectAuthor.user_id == User.user_id)
+            .join(ProjectAdvisor, Project.project_id == ProjectAdvisor.project_id)
+            .join(Advisor, ProjectAdvisor.advisor_id == Advisor.advisor_id)
+            .join(ProjectKeyword, Project.project_id == ProjectKeyword.project_id)
+            .join(Keyword, ProjectKeyword.keyword_id == Keyword.keyword_id)
+            .join(Degree, Project.degree_id == Degree.degree_id)
+            .join(DegreeDepartment, Degree.degree_id == DegreeDepartment.degree_id)
+            .join(Department, DegreeDepartment.department_id == Department.department_id)
+            .join(Faculty, Department.faculty_id == Faculty.faculty_id)
+            .where(*filters, Project.is_active == True)
+        ).one()
+
+        total_pages = (total_items + request.limit - 1) // request.limit
+
         result = {}
-        for project, user, advisor, keyword , degree, department, faculty in projects:
+        for project, user, advisor, keyword, faculty, department in projects:
             pid = project.project_id
 
             if pid not in result:
@@ -140,12 +180,10 @@ class ProjectRepository:
                     "users": [],
                     "advisors": [],
                     "keywords": [],
-                    "degrees": degree.model_dump(),
-                    "departments": department.model_dump(),
-                    "facultys": faculty.model_dump()
+                    "faculty": faculty.model_dump(),
+                    "department": department.model_dump(),
                 }
 
-            # ✅ กันซ้ำใน list
             if user.user_id not in [u["user_id"] for u in result[pid]["users"]]:
                 result[pid]["users"].append(user.model_dump())
 
@@ -155,7 +193,15 @@ class ProjectRepository:
             if keyword.keyword_id not in [k["keyword_id"] for k in result[pid]["keywords"]]:
                 result[pid]["keywords"].append(keyword.model_dump())
 
-        return list(result.values())
+        return {
+            "data": list(result.values()),
+            "metadata": {
+                "total_items": total_items,
+                "total_pages": total_pages,
+                "current_page": request.page,
+                "per_page": request.limit
+            }
+        }
 
     @staticmethod
     async def get_faculty(db: Session):
@@ -174,7 +220,7 @@ class ProjectRepository:
                     "departments": [],
                 }
 
-            # ✅ กันซ้ำใน list
+            # กันซ้ำใน list
             if department.department_id not in [u["department_id"] for u in result[fid]["departments"]]:
                 result[fid]["departments"].append(department.model_dump())
 

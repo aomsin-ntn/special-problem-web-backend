@@ -107,5 +107,24 @@ async def logout(request: Request, response: Response, db: Annotated[AsyncSessio
     return {"message": "Logged out successfully"}
 
 @router.get("/me")
-async def get_profile(user=Depends(get_current_user)):
-    return user
+async def get_profile(
+    current_user: User = Depends(get_current_user), 
+    db: Session = Depends(get_db)   
+    ):
+    
+    result = UserRepository.get_user_profile(db=db, user_id=current_user.user_id)
+
+    
+    if not result:
+        raise HTTPException(status_code=404, detail="ไม่พบข้อมูลผู้ใช้งาน")
+
+    user, degree, department, faculty = result
+
+    return {
+        "studentId": user.student_id,
+        "studentName": user.user_name_th or user.user_name_en,
+        "degree": degree.degree_name_th if degree else "-",
+        "department": department.department_name_th if department else "-",
+        "faculty": faculty.faculty_name_th if faculty else "-",
+        "email": user.email
+    }
