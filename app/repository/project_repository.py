@@ -120,12 +120,14 @@ class ProjectRepository:
             .join(User, ProjectAuthor.user_id == User.user_id)
             .join(ProjectAdvisor, Project.project_id == ProjectAdvisor.project_id)
             .join(Advisor, ProjectAdvisor.advisor_id == Advisor.advisor_id)
-            .join(ProjectKeyword, Project.project_id == ProjectKeyword.project_id)
-            .join(Keyword, ProjectKeyword.keyword_id == Keyword.keyword_id)
+            .join(ProjectKeyword, Project.project_id == ProjectKeyword.project_id, isouter=True) # แนะนำให้ใช้ isouter=True
+            .join(Keyword, ProjectKeyword.keyword_id == Keyword.keyword_id, isouter=True)
             .join(Degree, Project.degree_id == Degree.degree_id)
             .join(DegreeDepartment, Degree.degree_id == DegreeDepartment.degree_id)
             .join(Department, DegreeDepartment.department_id == Department.department_id)
             .join(Faculty, Department.faculty_id == Faculty.faculty_id)
+            # 👇 เติม isouter=True เพื่อป้องกันโปรเจกต์ที่ไม่มีไฟล์หายไปจากระบบ
+            .join(ProjectFile, Project.file_id == ProjectFile.file_id, isouter=True) 
             .where(*filters, Project.is_active == True)
             .order_by(order_by)
             .offset((request.page - 1) * request.limit)
@@ -138,17 +140,18 @@ class ProjectRepository:
             projects = []
         else:
             projects = db.exec(
-                select(Project, User, Advisor, Keyword, Faculty, Department)
+                select(Project, User, Advisor, Keyword, Faculty, Department, ProjectFile)
                 .join(ProjectAuthor, Project.project_id == ProjectAuthor.project_id)
                 .join(User, ProjectAuthor.user_id == User.user_id)
                 .join(ProjectAdvisor, Project.project_id == ProjectAdvisor.project_id)
                 .join(Advisor, ProjectAdvisor.advisor_id == Advisor.advisor_id)
-                .join(ProjectKeyword, Project.project_id == ProjectKeyword.project_id)
-                .join(Keyword, ProjectKeyword.keyword_id == Keyword.keyword_id)
+                .join(ProjectKeyword, Project.project_id == ProjectKeyword.project_id, isouter=True)
+                .join(Keyword, ProjectKeyword.keyword_id == Keyword.keyword_id, isouter=True)
                 .join(Degree, Project.degree_id == Degree.degree_id)
                 .join(DegreeDepartment, Degree.degree_id == DegreeDepartment.degree_id)
                 .join(Department, DegreeDepartment.department_id == Department.department_id)
                 .join(Faculty, Department.faculty_id == Faculty.faculty_id)
+                .join(ProjectFile, Project.file_id == ProjectFile.file_id, isouter=True)
                 .where(Project.project_id.in_(project_ids))
                 .order_by(order_by)
             ).all()
@@ -159,19 +162,22 @@ class ProjectRepository:
             .join(User, ProjectAuthor.user_id == User.user_id)
             .join(ProjectAdvisor, Project.project_id == ProjectAdvisor.project_id)
             .join(Advisor, ProjectAdvisor.advisor_id == Advisor.advisor_id)
-            .join(ProjectKeyword, Project.project_id == ProjectKeyword.project_id)
-            .join(Keyword, ProjectKeyword.keyword_id == Keyword.keyword_id)
+            .join(ProjectKeyword, Project.project_id == ProjectKeyword.project_id, isouter=True)
+            .join(Keyword, ProjectKeyword.keyword_id == Keyword.keyword_id, isouter=True)
             .join(Degree, Project.degree_id == Degree.degree_id)
             .join(DegreeDepartment, Degree.degree_id == DegreeDepartment.degree_id)
             .join(Department, DegreeDepartment.department_id == Department.department_id)
             .join(Faculty, Department.faculty_id == Faculty.faculty_id)
+            # 👇 ต้องมี ProjectFile join เข้ามาใน total_items ด้วย ไม่เช่นนั้นนับเลขหน้าผิด
+            .join(ProjectFile, Project.file_id == ProjectFile.file_id, isouter=True) 
             .where(*filters, Project.is_active == True)
         ).one()
 
         total_pages = (total_items + request.limit - 1) // request.limit
 
         result = {}
-        for project, user, advisor, keyword, faculty, department in projects:
+        # วนลูป โดยมี project_file ออกมาด้วย
+        for project, user, advisor, keyword, faculty, department, project_file in projects:
             pid = project.project_id
 
             if pid not in result:
@@ -182,15 +188,17 @@ class ProjectRepository:
                     "keywords": [],
                     "faculty": faculty.model_dump(),
                     "department": department.model_dump(),
+                    # 👇 แก้ไขให้ดึงจากตัวแปร project_file โดยตรง
+                    "project_file": project_file.model_dump() if project_file else None 
                 }
 
-            if user.user_id not in [u["user_id"] for u in result[pid]["users"]]:
+            if user and user.user_id not in [u["user_id"] for u in result[pid]["users"]]:
                 result[pid]["users"].append(user.model_dump())
 
-            if advisor.advisor_id not in [a["advisor_id"] for a in result[pid]["advisors"]]:
+            if advisor and advisor.advisor_id not in [a["advisor_id"] for a in result[pid]["advisors"]]:
                 result[pid]["advisors"].append(advisor.model_dump())
 
-            if keyword.keyword_id not in [k["keyword_id"] for k in result[pid]["keywords"]]:
+            if keyword and keyword.keyword_id not in [k["keyword_id"] for k in result[pid]["keywords"]]:
                 result[pid]["keywords"].append(keyword.model_dump())
 
         return {
