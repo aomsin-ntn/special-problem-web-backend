@@ -83,49 +83,49 @@ class UploadServices:
         degree = None
 
         """" !!!get the current user via dependency injection (login session)"""
-        user = User(
-            user_id=uuid4(),
-            student_id="65000001",
-            user_name_th="สมชาย ใจสู้",
-            user_name_en="Somchai Jaisoo",
-            degree_id="CS01",
-            role=Role.STUDENT,
-            email="somchai@example.com",
-            password_hash="$2b$12$examplehashedpassword"
-        )
+        # user = User(
+        #     user_id=uuid4(),
+        #     student_id="65000001",
+        #     user_name_th="สมชาย ใจสู้",
+        #     user_name_en="Somchai Jaisoo",
+        #     degree_id="CS01",
+        #     role=Role.STUDENT,
+        #     email="somchai@example.com",
+        #     password_hash="$2b$12$examplehashedpassword"
+        # )
         
-        """" !!!create the thumbnail and store the path """
-        project_file = ProjectFile(
-            file_id=uuid4(),
-            file_name=file.filename,
-            file_path=dest,
-            thumbnail_path="/uploads/thumbnails/diagram_thumb.png", 
-            uploaded_at=datetime.utcnow
-        )
+        # """" !!!create the thumbnail and store the path """
+        # project_file = ProjectFile(
+        #     file_id=uuid4(),
+        #     file_name=file.filename,
+        #     file_path=dest,
+        #     thumbnail_path="/uploads/thumbnails/diagram_thumb.png", 
+        #     uploaded_at=datetime.utcnow
+        # )
 
 
-        """" !!!make tge field2 (support the EN)"""
-        project=Project(
-            title_th=fields1.get("หัวข้อ", ""),
-            title_en="apichard",
-            # title_en=fields2.get("title", ""),
-            abstract_th=fields1.get("คำสำคัญ", ""),
-            # abstract_en=fields2.get("abstract", ""),
-            abstract_en="Hello",
-            academic_year=fields1.get("ปิการศึกษา", ""),
-            degree_id=degree.id if degree else None,
-            created_by=user.user_id,
-            is_active=False,
-            file_id=project_file.file_id,
-            downloaded_count=0
-        )
+        # """" !!!make tge field2 (support the EN)"""
+        # project=Project(
+        #     title_th=fields1.get("หัวข้อ", ""),
+        #     title_en="apichard",
+        #     # title_en=fields2.get("title", ""),
+        #     abstract_th=fields1.get("คำสำคัญ", ""),
+        #     # abstract_en=fields2.get("abstract", ""),
+        #     abstract_en="Hello",
+        #     academic_year=fields1.get("ปิการศึกษา", ""),
+        #     degree_id=degree.id if degree else None,
+        #     created_by=user.user_id,
+        #     is_active=False,
+        #     file_id=project_file.file_id,
+        #     downloaded_count=0
+        # )
 
         user2 = User(
             user_id=uuid4(),
             student_id="65555555",
-            user_name_th="ส้มโต่ย ส้มโต้ย",
-            user_name_en="Somtoi Somtoy",
-            degree_id="CS01",
+            user_name_th=fields1.get("Name",""),
+            user_name_en=fields2.get("Name",""),
+            degree_id=None,
             role=Role.STUDENT,
             email="lnwsomtoyza@kmitl.ac.th",
             password_hash=None
@@ -135,15 +135,15 @@ class UploadServices:
             file_id=uuid4(),
             file_name=file.filename,
             file_path=str(dest),
-            thumbnail_path=thumbnail_path, 
-            uploaded_at=datetime.utcnow
+            thumbnail_path=str(thumbnail_path), 
+            uploaded_at=datetime.utcnow()
         )
 
         project_detail2 = Project(
             title_th=fields1.get("Title", ""),
             title_en=fields2.get("Title",""),
             abstract_th=fields1.get("Abstract",""),
-            abstract_en=fields1.get("Abstract",""),
+            abstract_en=fields2.get("Abstract",""),
             academic_year=fields1.get("AcademicYear",""),
             degree_id= None,
             created_by=user2.user_id,
@@ -152,9 +152,9 @@ class UploadServices:
             download_count=0
         )
 
-        await UserRepository.create_user(session, user)
-        await ProjectRepository.create_project_file(session, project_file)
-        await ProjectRepository.create_project(session, project)
+        await UserRepository.create_user(session, user2)
+        await ProjectRepository.create_project_file(session, project_file2)
+        await ProjectRepository.create_project(session, project_detail2)
 
 
         """ !!! split the file from repository for more clean code"""
