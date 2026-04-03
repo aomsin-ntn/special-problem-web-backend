@@ -29,23 +29,84 @@ class SpellChecker:
         return text
 
     def extract_fields(self, text: str) -> dict:
+    # -----------------------
+    # 🔥 normalize text (กัน spacing เพี้ยน)
+    # -----------------------
+        text = re.sub(r'[ \t]+', ' ', text)
+
         pattern = {
-        'Title': r'(?:หัวข้อ(?:ปัญหาพิเศษ|สหกิจศึกษา|โครงงานพิเศษ)|สหกิจศึกษา|Title:?|TITLE:?|title:?)\s*(.*?)(?=\s*(?:ชื่อนักศึกษา|Students?|$))',
-        'Name': r'(?:ชื่อนักศึกษา|Students?)\s*(.*?)(?=\s*(?:ปริญญา|Degree|$))',
-        'Degree': r'(?:ปริญญา|Degree)\s*(.*?)(?=\s*(?:ภาควิชา|Department|$))',
-        'Department': r'(?:ภาควิชา|Department)\s*(.*?)(?=\s*(?:คณะ|Faculty|$))',
-        'Faculty': r'(?:คณะ|Faculty)\s*(.*?)(?=\s*(?:มหาวิทยาลัย|University|$))',
-        'University': r'(?:มหาวิทยาลัย|University)\s*(.*?)(?=\s*(?:ปีการศึกษา|Academic\s*Year:?|Academic\s*Year|$))',
-        'AcademicYear': r'(?:ปีการศึกษา|Academic\s*Year:?|AcademicYear:?|AcademicYear)\s*(.*?)(?=\s*(?:อาจารย์ที่ปรึกษา|Advisor|$))',
-        'Advisor': r'(?:อาจารย์ที่ปรึกษา|Advisor)\s*(.*?)(?=\s*(?:บทคัดย่อ|Abstract|$))',
-        'Abstract': r'(?:บทคัดย่อ|Abstract)\s*(.*?)(?=\s*(?:คำสำคัญ|Keywords|$))',
-        'Keywords': r'(?:คำสำคัญ:?|Keywords:?)\s*(.*?)(?=\s*(?:หัวข้อ|Title|$))'
-    }
+            'Title': r'(?:หัวข้อ(?:ปัญหาพิเศษ|สหกิจศึกษา|โครงงานพิเศษ)|สหกิจศึกษา|Title:?|TITLE:?|title:?)\s*(.*?)(?=\s*(?:ชื่อนักศึกษา|Students?|$))',
+            'Degree': r'(?:ปริญญา|Degree)\s*(.*?)(?=\s*(?:ภาควิชา|Department|$))',
+            'Department': r'(?:ภาควิชา|Department)\s*(.*?)(?=\s*(?:คณะ|Faculty|$))',
+            'Faculty': r'(?:คณะ|Faculty)\s*(.*?)(?=\s*(?:มหาวิทยาลัย|University|$))',
+            'University': r'(?:มหาวิทยาลัย|University)\s*(.*?)(?=\s*(?:ปีการศึกษา|Academic\s*Year:?|Academic\s*Year|$))',
+            'AcademicYear': r'(?:ปีการศึกษา|Academic\s*Year:?|AcademicYear:?|AcademicYear)\s*(.*?)(?=\s*(?:อาจารย์ที่ปรึกษา|Advisor|$))',
+            'Advisor': r'(?:อาจารย์ที่ปรึกษา|Advisor)\s*(.*?)(?=\s*(?:บทคัดย่อ|Abstract|$))',
+            'Abstract': r'(?:บทคัดย่อ|Abstract)\s*(.*?)(?=\s*(?:คำสำคัญ|Keywords|$))',
+            'Keywords': r'(?:คำสำคัญ:?|Keywords:?)\s*(.*?)(?=\s*(?:หัวข้อ|Title|$))'
+        }
+
         results = {}
+
+        # -----------------------
+        # extract field อื่น
+        # -----------------------
         for key, pat in pattern.items():
             m = re.search(pat, text, flags=re.DOTALL)
             if m:
                 results[key] = m.group(1).strip()
+
+        # =========================
+        # 🔥 STEP 1: extract "name block" ก่อน
+        # =========================
+        name_block = None
+        m = re.search(
+            r'(?:ชื่อนักศึกษา|Students?)(.*?)(?=\s*(?:ปริญญา|Degree))',
+            text,
+            flags=re.DOTALL
+        )
+
+        if m:
+            name_block = m.group(1).strip()
+
+        students = []
+
+        # =========================
+        # 🔥 STEP 2: parse ใน block เท่านั้น
+        # =========================
+        if name_block:
+            matches = re.findall(
+                r'([^\n]+?)\s*(?:รหัสนักศึกษา|Student ID|ID)\s*(\d+)',
+                name_block
+            )
+
+            for name, sid in matches:
+                students.append({
+                    "name": name.strip(),
+                    "id": sid.strip()
+                })
+
+        # =========================
+        # 🔥 STEP 3: fallback
+        # =========================
+        if not students and name_block:
+            lines = [l.strip() for l in name_block.split('\n') if l.strip()]
+
+            for line in lines:
+                id_match = re.search(r'\d{6,}', line)
+                name = re.sub(r'\d{6,}', '', line).strip()
+
+                students.append({
+                    "name": name if name else None,
+                    "id": id_match.group() if id_match else None
+                })
+
+        # -----------------------
+        # assign
+        # -----------------------
+        if students:
+            results['Students'] = students
+
         return results
 
     # -------------------------

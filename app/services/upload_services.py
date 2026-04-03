@@ -1,5 +1,4 @@
 from app.core.ocr_engine import OCREngine
-from app.services.webhook_services import WebhookServices
 from fastapi import UploadFile
 from pathlib import Path
 from uuid import uuid4
@@ -29,7 +28,6 @@ class UploadServices:
         self.upload_dir.mkdir(parents=True, exist_ok=True)
         self.thumbnail_dir.mkdir(parents=True, exist_ok=True)
         self.ocr_engine = OCREngine(poppler_path=self.poppler_path)
-        self.webhook_services = WebhookServices()
 
     async def save_file(self, file: UploadFile, page: list[int] = [1],session: AsyncSession = Depends(get_db)):
         ext = Path(file.filename).suffix
@@ -73,95 +71,58 @@ class UploadServices:
         fields1 = checker.extract_fields(text1)
         fields2 = checker.extract_fields(text2)
 
-        print(fields1, fields2)
+        print(fields1)
+        print(100*"-")
+        print(fields2)
+        print(fields1.get("name",""))
 
-        fields1 = {k: checker.clean_text(v) if v else v for k, v in fields1.items()}
-        fields2 = {k: checker.clean_text(v) if v else v for k, v in fields2.items()}
+        # fields1 = {k: checker.clean_text(v) if v else v for k, v in fields1.items()}
+        # fields2 = {k: checker.clean_text(v) if v else v for k, v in fields2.items()}
 
         """" !!!check if degree is exits """
         #degree = session.query(Degree).filter(Degree.degree_name_th == fields1.get("ปริญญา")).first()
         degree = None
 
         """" !!!get the current user via dependency injection (login session)"""
+        #currenct_user=Depends(get_current_user)
+        #print(current_user)
         # user = User(
         #     user_id=uuid4(),
-        #     student_id="65000001",
-        #     user_name_th="สมชาย ใจสู้",
-        #     user_name_en="Somchai Jaisoo",
-        #     degree_id="CS01",
+        #     student_id="65555555",
+        #     user_name_th=fields1.get("Name",""),
+        #     user_name_en=fields2.get("Name",""),
+        #     degree_id=None,
         #     role=Role.STUDENT,
-        #     email="somchai@example.com",
-        #     password_hash="$2b$12$examplehashedpassword"
+        #     email="lnwsomtoyza@kmitl.ac.th",
+        #     password_hash=None
         # )
-        
-        # """" !!!create the thumbnail and store the path """
+
         # project_file = ProjectFile(
         #     file_id=uuid4(),
         #     file_name=file.filename,
-        #     file_path=dest,
-        #     thumbnail_path="/uploads/thumbnails/diagram_thumb.png", 
-        #     uploaded_at=datetime.utcnow
+        #     file_path=str(dest),
+        #     thumbnail_path=str(thumbnail_path), 
+        #     uploaded_at=datetime.utcnow()
         # )
 
-
-        # """" !!!make tge field2 (support the EN)"""
-        # project=Project(
-        #     title_th=fields1.get("หัวข้อ", ""),
-        #     title_en="apichard",
-        #     # title_en=fields2.get("title", ""),
-        #     abstract_th=fields1.get("คำสำคัญ", ""),
-        #     # abstract_en=fields2.get("abstract", ""),
-        #     abstract_en="Hello",
-        #     academic_year=fields1.get("ปิการศึกษา", ""),
-        #     degree_id=degree.id if degree else None,
+        # project = Project(
+        #     title_th=fields1.get("Title", ""),
+        #     title_en=fields2.get("Title",""),
+        #     abstract_th=fields1.get("Abstract",""),
+        #     abstract_en=fields2.get("Abstract",""),
+        #     academic_year=fields1.get("AcademicYear",""),
+        #     degree_id= None,
         #     created_by=user.user_id,
-        #     is_active=False,
+        #     is_active=True,
         #     file_id=project_file.file_id,
-        #     downloaded_count=0
+        #     download_count=0
         # )
 
-        user2 = User(
-            user_id=uuid4(),
-            student_id="65555555",
-            user_name_th=fields1.get("Name",""),
-            user_name_en=fields2.get("Name",""),
-            degree_id=None,
-            role=Role.STUDENT,
-            email="lnwsomtoyza@kmitl.ac.th",
-            password_hash=None
-        )
-
-        project_file2 = ProjectFile(
-            file_id=uuid4(),
-            file_name=file.filename,
-            file_path=str(dest),
-            thumbnail_path=str(thumbnail_path), 
-            uploaded_at=datetime.utcnow()
-        )
-
-        project_detail2 = Project(
-            title_th=fields1.get("Title", ""),
-            title_en=fields2.get("Title",""),
-            abstract_th=fields1.get("Abstract",""),
-            abstract_en=fields2.get("Abstract",""),
-            academic_year=fields1.get("AcademicYear",""),
-            degree_id= None,
-            created_by=user2.user_id,
-            is_active=True,
-            file_id=project_file2.file_id,
-            download_count=0
-        )
-
-        await UserRepository.create_user(session, user2)
-        await ProjectRepository.create_project_file(session, project_file2)
-        await ProjectRepository.create_project(session, project_detail2)
-
-
-        """ !!! split the file from repository for more clean code"""
+        # """ !!! split the file from repository for more clean code"""
         # await UserRepository.create_user(session, user)
         # await ProjectRepository.create_project_file(session, project_file)
         # await ProjectRepository.create_project(session, project)
-
+        
         #print(project)
 
         # print("Text1:", result1)

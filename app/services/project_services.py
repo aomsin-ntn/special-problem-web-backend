@@ -67,6 +67,11 @@ class ProjectServices:
         return final_result
 
     @staticmethod
+    async def download_project(db:Session,project_id)
+        project = await ProjectRepository.download_project(db,project_id)
+        return project
+
+    @staticmethod
     async def get_faculty(db: Session):
         faculty = await ProjectRepository.get_faculty(db)
         return faculty
