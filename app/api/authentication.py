@@ -15,20 +15,15 @@ from fastapi.responses import RedirectResponse
 from uuid import UUID
 from app.services.project_services import ProjectServices
 from app.repository.user_repository import UserRepository
-
+from app.config import settings
 
 router = APIRouter(prefix="/auth")
-config = Config(".env")
-oauth =OAuth(config)
-
-load_dotenv()
-client_id = os.getenv("GOOGLE_CLIENT_ID")
-client_secret = os.getenv("GOOGLE_CLIENT_SECRET")
+oauth =OAuth()
 
 oauth.register(
     name="google",
-    client_id=client_id,
-    client_secret=client_secret,
+    client_id=settings.google_client_id,
+    client_secret=settings.google_client_secret,
     server_metadata_url="https://accounts.google.com/.well-known/openid-configuration",
     client_kwargs={"scope": "openid email profile"},
 )

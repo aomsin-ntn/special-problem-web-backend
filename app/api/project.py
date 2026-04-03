@@ -3,7 +3,7 @@ All API Routes
 """
 from fastapi import APIRouter, Depends, UploadFile, File, Query
 from app.schemas.root_schema import RootResponse, ItemResponse, ItemRequest
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse,  FileResponse
 from app.services.upload_services import UploadServices
 from typing import Annotated
 from sqlmodel import Session
@@ -17,13 +17,26 @@ from app.api.authentication import get_current_user
 router = APIRouter(prefix="/project")
 
 @router.post("/upload")
-async def upload(
+async def handle_upload(
     db: Annotated[AsyncSession, Depends(get_db)],
     file: UploadFile = File(...),
     service: UploadServices = Depends(),
-    page: list[int] = Query([1], description="Page numbers for pagination",)
+    pages: list[int] = Query([1], description="Page numbers for OCR",)
 ):
-    return await service.save_file(file, page=page, session=db)
+    return await service.handle_upload(file, pages=pages, db=db)
+
+@router.get("/download/{project_id}")
+async def download_projectfile(
+    db: Annotated[Session, Depends(get_db)],
+    project_id: UUID,
+):
+    projectfile = await ProjectServices.download_projectfile(db, project_id)
+
+    return FileResponse(
+        path=projectfile.file_path,
+        filename=projectfile.file_name,
+        media_type="application/pdf"
+    )
 
 @router.patch("/delete")
 async def delete_project(
@@ -45,7 +58,9 @@ async def get_projects(
     return projects
 
 @router.get("/most_downloaded")
-async def get_most_downloaded_projects(db: Annotated[Session, Depends(get_db)]):
+async def get_most_downloaded_projects(
+    db: Annotated[Session, Depends(get_db)]
+):
     projects = await ProjectServices.get_most_downloaded_projects(db)
     print(projects)
     return projects
