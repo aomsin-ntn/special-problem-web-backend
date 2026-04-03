@@ -235,17 +235,27 @@ class ProjectRepository:
         return list(result.values())
 
     @staticmethod
-    async def download_project(db:Session,project_id:UUID):
-        project = db.exec(
-            select(Project, ProjectFiles)
+    async def download_projectfile(db:Session,project_id:UUID):
+        project_row = db.exec(
+            select(Project, ProjectFile)
             .join(ProjectFile, Project.file_id == ProjectFile.file_id)
             .where(Project.project_id == project_id)
         ).first()
-        return project
+
+        if not project_row:
+            return None
+
+        project, project_file = project_row
+
+        project.downloaded_count += 1
+        db.commit()
+        return project_file
 
     # @staticmethod
     # async def update_project(db:Session,project_id:UUID,project,):
-    #     project
+    #     project = db.exec(
+    #         select(Project, ProjectFiles)
+    #     )
 
     @staticmethod
     async def get_master_faculties(db:Session):
