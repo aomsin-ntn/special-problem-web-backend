@@ -64,3 +64,11 @@ async def get_faculty(
 ):
     faculty = await ProjectServices.get_faculty(db)
     return faculty
+
+@router.get("/download/{project_id}")
+async def download_project(
+    db: Annotated[Session, Depends(get_db)],
+    project_id: UUID
+):  
+    project = await ProjectServices.download_project(db, project_id)
+    return project

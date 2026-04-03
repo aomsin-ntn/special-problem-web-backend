@@ -64,7 +64,7 @@ class ProjectRepository:
         return project_file
 
     @staticmethod
-    async def delete_project(db: Session, project_id: int):
+    async def delete_project(db: Session, project_id: UUID):
         project = db.exec(
             select(Project).where(Project.project_id == project_id)
         ).first()
@@ -233,6 +233,19 @@ class ProjectRepository:
                 result[fid]["departments"].append(department.model_dump())
 
         return list(result.values())
+
+    @staticmethod
+    async def download_project(db:Session,project_id:UUID):
+        project = db.exec(
+            select(Project, ProjectFiles)
+            .join(ProjectFile, Project.file_id == ProjectFile.file_id)
+            .where(Project.project_id == project_id)
+        ).first()
+        return project
+
+    # @staticmethod
+    # async def update_project(db:Session,project_id:UUID,project,):
+    #     project
 
     @staticmethod
     async def get_master_faculties(db:Session):
