@@ -67,9 +67,11 @@ class ProjectServices:
         return final_result
 
     @staticmethod
-    async def download_project(db:Session,project_id)
-        project = await ProjectRepository.download_project(db,project_id)
-        return project
+    async def download_projectfile(db:Session,project_id):
+        projectfile = await ProjectRepository.download_projectfile(db,project_id)
+        if not projectfile:
+            raise HTTPException(status_code=404, detail="Project not found")
+        return projectfile
 
     @staticmethod
     async def get_faculty(db: Session):

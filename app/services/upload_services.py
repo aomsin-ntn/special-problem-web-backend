@@ -1,91 +1,34 @@
-from app.core.ocr_engine import OCREngine
-from fastapi import UploadFile
-from pathlib import Path
-from uuid import uuid4
-import shutil
-import json
-import easyocr
-import cv2
-from attacut import tokenize
-from app.services.spellchecker_services import SpellChecker
-from app.models.project import Project
-from app.models.project_file import ProjectFile
-from app.models.degree import Degree
-from app.models.user import User,Role
-from app.database import get_db
-from sqlmodel import Session
-from app.repository.project_repository import ProjectRepository
-from fastapi import Depends
-from sqlalchemy.ext.asyncio import AsyncSession
-from datetime import datetime
-from app.repository.user_repository import UserRepository
+from app.services.file_services import FileService
+from app.services.ocr_services import OCRService
+from app.services.text_services import TextService
+from app.config import settings
 
 class UploadServices:
-    poppler_path = r"C:\poppler-25.07.0\Library\bin"
     def __init__(self):
-        self.upload_dir = Path("uploads")
-        self.thumbnail_dir = Path("thumbnails")
-        self.upload_dir.mkdir(parents=True, exist_ok=True)
-        self.thumbnail_dir.mkdir(parents=True, exist_ok=True)
-        self.ocr_engine = OCREngine(poppler_path=self.poppler_path)
+        self.file_service = FileService()
+        self.ocr_service = OCRService(poppler_path=settings.poppler_path)
+        self.text_service = TextService()
 
-    async def save_file(self, file: UploadFile, page: list[int] = [1],session: AsyncSession = Depends(get_db)):
-        ext = Path(file.filename).suffix
-        safe_name = f"{uuid4().hex}{ext}"
-        dest = self.upload_dir / safe_name
+    async def handle_upload(self, file, pages, db):
+    # 1. save file
+        dest, safe_name = self.file_service.save(file)
 
-        with dest.open("wb") as buffer:
-            shutil.copyfileobj(file.file, buffer)
-        
-        thumbnail = self.ocr_engine.pdf_to_image(str(dest), page_num=1)
-        thumbnail_path = self.thumbnail_dir / f"{uuid4().hex}_thumb.png"
-        cv2.imwrite(thumbnail_path, thumbnail)
+        # 2. thumbnail
+        thumbnail_img = self.ocr_service.get_thumbnail(str(dest))
+        thumbnail_path = self.file_service.save_thumbnail(thumbnail_img)
 
-        error_dict = {
-            "ptthn": {"correct": "python", "count": 10},
-            "pythn": {"correct": "python", "count": 15},
-            "รก": {"correct": "รัก", "count": 5},
-            "ออกไป": {"correct": "ออกไป", "count": 10}
-        }
+        # 3. OCR + extract
+        pages = sorted(pages)[:2]
+        print("pages:", pages)
+    
+        ocr1, pdf1 = self.ocr_service.extract(str(dest), pages[0])
+        ocr2, pdf2 = self.ocr_service.extract(str(dest), pages[1])
 
-        page = sorted(page)[:2]
-        ocr_text1 = self.ocr_engine.process_document_ocr(str(dest), page_num=page[0])
-        ocr_text2 = self.ocr_engine.process_document_ocr(str(dest), page_num=page[1])
-        ext_text1 = self.ocr_engine.pdf_to_text(str(dest), page_num=page[0])
-        ext_text2 = self.ocr_engine.pdf_to_text(str(dest), page_num=page[1])
+        # 4. process text
+        fields1 = self.text_service.process(ocr1, pdf1)
+        fields2 = self.text_service.process(ocr2, pdf2)
 
-        checker = SpellChecker(error_dict, threshold=10)
-        suggestions1 = checker.compare(ocr_text1, ext_text1)
-        # suggestions2 = checker.compare(ocr_text2, ext_text2)
-        suggestions2 = {"choose": "text2", "result": None}
-
-        # suggestions1 = checker.compare(ext_text1, ext_text1)
-        # suggestions2 = checker.compare(ext_text2, ext_text2)
-        
-        choice1 = suggestions1.get("choose")
-        choice2 = suggestions2.get("choose")
-
-        text1 = ocr_text1 if choice1 == "text1" else ext_text1
-        text2 = ocr_text2 if choice2 == "text1" else ext_text2
-
-        fields1 = checker.extract_fields(text1)
-        fields2 = checker.extract_fields(text2)
-
-        print(fields1)
-        print(100*"-")
-        print(fields2)
-        print(fields1.get("name",""))
-
-        # fields1 = {k: checker.clean_text(v) if v else v for k, v in fields1.items()}
-        # fields2 = {k: checker.clean_text(v) if v else v for k, v in fields2.items()}
-
-        """" !!!check if degree is exits """
-        #degree = session.query(Degree).filter(Degree.degree_name_th == fields1.get("ปริญญา")).first()
-        degree = None
-
-        """" !!!get the current user via dependency injection (login session)"""
-        #currenct_user=Depends(get_current_user)
-        #print(current_user)
+        # 5. บันทึกลง Database
         # user = User(
         #     user_id=uuid4(),
         #     student_id="65555555",
@@ -118,25 +61,15 @@ class UploadServices:
         #     download_count=0
         # )
 
-        # """ !!! split the file from repository for more clean code"""
         # await UserRepository.create_user(session, user)
         # await ProjectRepository.create_project_file(session, project_file)
         # await ProjectRepository.create_project(session, project)
-        
-        #print(project)
 
-        # print("Text1:", result1)
-        # print("Text2:", result2)
-        # print(conclusion)
-        # token = tokenize(ocr_text)
-        # print(token)
-        # print(type(ext))
-        # result = list(ext.values())
-        # print(result)
         return {
             "original_filename": file.filename,
-            "thumbnail_path": str(thumbnail_path),
+            "thumbnail_path": thumbnail_path,
             "saved_as": safe_name,
             "fields-th": fields1,
             "fields-en": fields2
         }
+            # return 0

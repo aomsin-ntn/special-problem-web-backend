@@ -19,14 +19,16 @@ class SpellChecker:
             "science", "engineering", "analysis", "learning"
         ])
 
-    def clean_text(self,text):
-        if not text:
-            return text
-
-        text = text.replace("\n", " ")
-        text = re.sub(r'\s+', ' ', text)
-        text = text.strip()
-        return text
+    TITLE_KEYS = r'(?:หัวข้อ(?:ปัญหาพิเศษ|สหกิจศึกษา|โครงงานพิเศษ)|สหกิจศึกษา|Title:?|TITLE:?|title:?)'
+    STUDENT_KEYS = r'(?:ชื่อนักศึกษา|Students?|student)'
+    DEGREE_KEYS = r'(?:ปริญญา|Degree)'
+    DEPARTMENT_KEYS = r'(?:ภาควิชา|Department)'
+    FACULTY_KEYS = r'(?:คณะ|Faculty)'
+    UNIVERSITY_KEYS = r'(?:มหาวิทยาลัย|University)'
+    ACADEMIC_YEAR_KEYS = r'(?:ปีการศึกษา|Academic\s*Year:?|AcademicYear:?|AcademicYear)'
+    ADVISOR_KEYS = r'(?:อาจารย์ที่ปรึกษา|Advisor)'
+    ABSTRACT_KEYS = r'(?:บทคัดย่อ|Abstract)'
+    KEYWORDS_KEYS = r'(?:คำสำคัญ:?|Keywords:?)'
 
     def extract_fields(self, text: str) -> dict:
     # -----------------------
@@ -34,16 +36,16 @@ class SpellChecker:
     # -----------------------
         text = re.sub(r'[ \t]+', ' ', text)
 
-        pattern = {
-            'Title': r'(?:หัวข้อ(?:ปัญหาพิเศษ|สหกิจศึกษา|โครงงานพิเศษ)|สหกิจศึกษา|Title:?|TITLE:?|title:?)\s*(.*?)(?=\s*(?:ชื่อนักศึกษา|Students?|$))',
-            'Degree': r'(?:ปริญญา|Degree)\s*(.*?)(?=\s*(?:ภาควิชา|Department|$))',
-            'Department': r'(?:ภาควิชา|Department)\s*(.*?)(?=\s*(?:คณะ|Faculty|$))',
-            'Faculty': r'(?:คณะ|Faculty)\s*(.*?)(?=\s*(?:มหาวิทยาลัย|University|$))',
-            'University': r'(?:มหาวิทยาลัย|University)\s*(.*?)(?=\s*(?:ปีการศึกษา|Academic\s*Year:?|Academic\s*Year|$))',
-            'AcademicYear': r'(?:ปีการศึกษา|Academic\s*Year:?|AcademicYear:?|AcademicYear)\s*(.*?)(?=\s*(?:อาจารย์ที่ปรึกษา|Advisor|$))',
-            'Advisor': r'(?:อาจารย์ที่ปรึกษา|Advisor)\s*(.*?)(?=\s*(?:บทคัดย่อ|Abstract|$))',
-            'Abstract': r'(?:บทคัดย่อ|Abstract)\s*(.*?)(?=\s*(?:คำสำคัญ|Keywords|$))',
-            'Keywords': r'(?:คำสำคัญ:?|Keywords:?)\s*(.*?)(?=\s*(?:หัวข้อ|Title|$))'
+        patterns = {
+            'Title': self.build_pattern(self.TITLE_KEYS, self.STUDENT_KEYS),
+            'Degree': self.build_pattern(self.DEGREE_KEYS, self.DEPARTMENT_KEYS),
+            'Department': self.build_pattern(self.DEPARTMENT_KEYS, self.FACULTY_KEYS),
+            'Faculty': self.build_pattern(self.FACULTY_KEYS, self.UNIVERSITY_KEYS),
+            'University': self.build_pattern(self.UNIVERSITY_KEYS, self.ACADEMIC_YEAR_KEYS),
+            'AcademicYear': self.build_pattern(self.ACADEMIC_YEAR_KEYS, self.ADVISOR_KEYS),
+            'Advisor': self.build_pattern(self.ADVISOR_KEYS, self.ABSTRACT_KEYS),
+            'Abstract': self.build_pattern(self.ABSTRACT_KEYS, self.KEYWORDS_KEYS),
+            'Keywords': rf'{self.KEYWORDS_KEYS}\s*(.*)',
         }
 
         results = {}
@@ -51,7 +53,7 @@ class SpellChecker:
         # -----------------------
         # extract field อื่น
         # -----------------------
-        for key, pat in pattern.items():
+        for key, pat in patterns.items():
             m = re.search(pat, text, flags=re.DOTALL)
             if m:
                 results[key] = m.group(1).strip()
@@ -61,7 +63,7 @@ class SpellChecker:
         # =========================
         name_block = None
         m = re.search(
-            r'(?:ชื่อนักศึกษา|Students?)(.*?)(?=\s*(?:ปริญญา|Degree))',
+            r'(?:ชื่อนักศึกษา|Students|student|students?)(.*?)(?=\s*(?:ปริญญา|Degree))',
             text,
             flags=re.DOTALL
         )
@@ -108,6 +110,19 @@ class SpellChecker:
             results['Students'] = students
 
         return results
+
+    def build_pattern(self,start, end):
+        return rf'{start}\s*(.*?)(?=\s*{end}|$)'
+
+
+    def clean_text(self,text):
+        if not text:
+            return text
+
+        text = text.replace("\n", " ")
+        text = re.sub(r'\s+', ' ', text)
+        text = text.strip()
+        return text
 
     # -------------------------
     # language check
