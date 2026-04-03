@@ -13,12 +13,10 @@ from app.models.project import Project
 from app.models.project_author import ProjectAuthor
 from app.models.project_advisor import ProjectAdvisor
 from app.models.project_keyword import ProjectKeyword
-from dotenv import load_dotenv
 from app.models.session import Session as UserSession
-import os
+from app.config import settings
 
-load_dotenv()
-db_host = os.getenv("DATABASE_URL")
+db_host = settings.database_url
 engine = create_engine(db_host, echo=False)
 
 def init_db():
