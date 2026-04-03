@@ -14,3 +14,4 @@ python-multipart
 authlib
 httpx
 itsdangerous
+pydantic-settings
