@@ -22,8 +22,15 @@ class ProjectSubmitRequest(BaseModel):
     abstract_th: str
     abstract_en: str
     academic_year: str
-    degree_id: UUID
-    advisor_id: UUID
+    
+    degree_id: Optional[UUID] = None
+    advisor_id: Optional[UUID] = None
+    
+    degree_name_th: str
+    degree_name_en: str
+    advisor_name_th: str
+    advisor_name_en: str
+    
     students: List[StudentInput]
     keywords: List[KeywordInput]
     file_info: FileInfoInput
