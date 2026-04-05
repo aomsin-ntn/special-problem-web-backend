@@ -3,5 +3,7 @@ __pycache__/
 uploads/
 venv/
 .env
+docker-compose.yml
+Dockerfile
 thumbnails/
 .venv/
