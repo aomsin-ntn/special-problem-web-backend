@@ -58,6 +58,16 @@ class UploadServices:
             fields1.get("Faculty", ""), fields2.get("Faculty", ""), faculties, "faculty_name_th", "faculty_name_en"
         )        
 
+        advisor_th_text = fields1.get("Advisor", "")
+        advisor_en_text = fields2.get("Advisor", "")
+        extracted_advisors = []
+        if advisor_th_text or advisor_en_text or advisor:
+            extracted_advisors.append({
+                "advisor_id": advisor.advisor_id if advisor else None,
+                "advisor_name_th": advisor.advisor_name_th if advisor else advisor_th_text,
+                "advisor_name_en": advisor.advisor_name_en if advisor else advisor_en_text
+            })
+
         # จัดเตรียมข้อมูล Keyword ส่งให้หน้าบ้าน
         keywords_th = fields1.get("Keywords", [])
         keywords_en = fields2.get("Keywords", [])
@@ -114,12 +124,7 @@ class UploadServices:
                     "faculty_name_th": faculty.faculty_name_th if faculty else fields1.get("Faculty", ""),
                     "faculty_name_en": faculty.faculty_name_en if faculty else fields2.get("Faculty", "")
                 },
-                "advisor": {
-                    "advisor_id": advisor.advisor_id if advisor else None,
-                    "advisor_name_th": advisor.advisor_name_th if advisor else fields1.get("Advisor", ""),
-                    "advisor_name_en": advisor.advisor_name_en if advisor else fields2.get("Advisor", "")
-                },
-
+                "advisors": extracted_advisors,
                 "students": extracted_students,
                 "keywords": extracted_keywords
             }
@@ -128,7 +133,6 @@ class UploadServices:
     @staticmethod
     async def save_project_data(data, db, current_user):
         actual_degree_id = data.degree.degree_id
-        actual_advisor_id = data.advisor.advisor_id
         actual_faculty_id = data.faculty.faculty_id
         actual_department_id = data.department.department_id
 
@@ -159,15 +163,26 @@ class UploadServices:
             if match_degree:
                 actual_degree_id = match_degree.degree_id
 
-        # 4. เช็คและหา Advisor (อาจารย์ที่ปรึกษา)
-        if not actual_advisor_id and (data.advisor.advisor_name_th or data.advisor.advisor_name_en):
-            db_advisors = await ProjectRepository.get_master_advisors(db) 
-            match_advisor = ProjectServices.find_match(
-                data.advisor.advisor_name_th, data.advisor.advisor_name_en, db_advisors, "advisor_name_th", "advisor_name_en"
-            )
-            if match_advisor:
-                actual_advisor_id = match_advisor.advisor_id
+        # 4. เช็คและหา Advisor (รองรับหลายคน)
+        db_advisors = await ProjectRepository.get_master_advisors(db) # ดึง Master Data มาครั้งเดียว
+        valid_advisor_ids = []
 
+        for adv in data.advisors: # วนลูปตามที่หน้าบ้านส่งมา
+            adv_id = adv.advisor_id
+            
+            # ถ้าไม่มี ID ให้ค้นหาจากชื่อ
+            if not adv_id and (adv.advisor_name_th or adv.advisor_name_en):
+                match_advisor = ProjectServices.find_match(
+                    adv.advisor_name_th, adv.advisor_name_en, db_advisors, "advisor_name_th", "advisor_name_en"
+                )
+                if match_advisor:
+                    adv_id = match_advisor.advisor_id
+
+            # ถ้าได้ ID มาแล้ว (และยังไม่ซ้ำในลิสต์) ให้เก็บไว้เตรียมบันทึก
+            if adv_id and adv_id not in valid_advisor_ids:
+                valid_advisor_ids.append(adv_id)
+        
+        # สร้าง ProjectFile
         project_file = ProjectFile(
             file_id=uuid4(),
             file_name=data.file_info.save_name,
@@ -177,7 +192,7 @@ class UploadServices:
         )
         await ProjectRepository.create_project_file(db, project_file)
 
-        # 2. บันทึก Project 
+        # บันทึก Project 
         project = Project(
             project_id=uuid4(),
             title_th=data.title_th,
@@ -193,7 +208,7 @@ class UploadServices:
         )
         await ProjectRepository.create_project(db, project)
 
-        # 3. บันทึก Author (วนลูปสร้างตามที่หน้าบ้านส่งมา)
+        # บันทึก Author (นักศึกษา)
         for index, student_data in enumerate(data.students, start=1):
             if not student_data.student_id: 
                 continue 
@@ -223,16 +238,16 @@ class UploadServices:
             )
             await ProjectRepository.create_project_author(db, author)
 
-        # 4. บันทึก Advisor
-        if actual_advisor_id:
+        # บันทึก Advisor (วนลูปสร้างตามจำนวนอาจารย์ที่กรองมาได้)
+        for index, adv_id in enumerate(valid_advisor_ids, start=1):
             project_advisor = ProjectAdvisor(
                 project_id=project.project_id,
-                advisor_id=actual_advisor_id,
-                advisor_order=1 
+                advisor_id=adv_id,
+                advisor_order=index # ลำดับอาจารย์คนที่ 1, 2, ...
             )
             await ProjectRepository.create_project_advisor(db, project_advisor)
 
-        # 5. บันทึก Keywords
+        # บันทึก Keywords
         db_keywords = await ProjectRepository.get_keywords(db)
         final_project_keywords = []
 
