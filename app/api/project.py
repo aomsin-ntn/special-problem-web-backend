@@ -93,6 +93,7 @@ async def download_projectfile(
 async def delete_project(
     db: Annotated[Session, Depends(get_db)],
     project_id: UUID,
+    user: User = Depends(get_current_user),
 ):
     try:
         result = await ProjectServices.delete_project(db, project_id)
