@@ -22,9 +22,7 @@ class UploadServices:
         self.ocr_service = OCRService(poppler_path=settings.poppler_path)
         self.text_service = TextService()
 
-    # ==========================================
-    # สเต็ปที่ 1: อัปโหลดเพื่อดึงข้อมูลอย่างเดียว (ไม่เซฟลง DB)
-    # ==========================================
+
     async def handle_upload(self, file, pages, db, current_user):
         # 1. save file
         dest, save_name = self.file_service.save(file)
@@ -44,6 +42,8 @@ class UploadServices:
 
         degrees = await ProjectRepository.get_master_degrees(db)
         advisors = await ProjectRepository.get_master_advisors(db)
+        departments = await ProjectRepository.get_master_departments(db)
+        faculties = await ProjectRepository.get_master_faculties(db)
         
         degree = ProjectServices.find_match(
             fields1.get("Degree", ""), fields2.get("Degree", ""), degrees, "degree_name_th", "degree_name_en"
@@ -51,6 +51,12 @@ class UploadServices:
         advisor = ProjectServices.find_match(
             fields1.get("Advisor", ""), fields2.get("Advisor", ""), advisors, "advisor_name_th", "advisor_name_en"
         )
+        department = ProjectServices.find_match(
+            fields1.get("Department", ""), fields2.get("Department", ""), departments, "department_name_th", "department_name_en"
+        )
+        faculty = ProjectServices.find_match(
+            fields1.get("Faculty", ""), fields2.get("Faculty", ""), faculties, "faculty_name_th", "faculty_name_en"
+        )        
 
         # จัดเตรียมข้อมูล Keyword ส่งให้หน้าบ้าน
         keywords_th = fields1.get("Keywords", [])
@@ -91,49 +97,77 @@ class UploadServices:
                 "abstract_th": fields1.get("Abstract", ""),
                 "abstract_en": fields2.get("Abstract", ""),
                 "academic_year": fields1.get("AcademicYear", ""),
-                "degree_id": degree.degree_id if degree else None,
-                "degree_name_th": degree.degree_name_th if degree else fields1.get("Degree", ""),
-                "degree_name_en": degree.degree_name_en if degree else fields2.get("Degree", ""),
-                "advisor_id": advisor.advisor_id if advisor else None,
-                "advisor_name_th": advisor.advisor_name_th if advisor else fields1.get("Advisor", ""),
-                "advisor_name_en": advisor.advisor_name_en if advisor else fields2.get("Advisor", ""),
+                
+                # จัดกลุ่มเป็นก้อน
+                "degree": {
+                    "degree_id": degree.degree_id if degree else None,
+                    "degree_name_th": degree.degree_name_th if degree else fields1.get("Degree", ""),
+                    "degree_name_en": degree.degree_name_en if degree else fields2.get("Degree", "")
+                },
+                "department": {
+                    "department_id": department.department_id if department else None,
+                    "department_name_th": department.department_name_th if department else fields1.get("Department", ""),
+                    "department_name_en": department.department_name_en if department else fields2.get("Department", "")
+                },
+                "faculty": {
+                    "faculty_id": faculty.faculty_id if faculty else None,
+                    "faculty_name_th": faculty.faculty_name_th if faculty else fields1.get("Faculty", ""),
+                    "faculty_name_en": faculty.faculty_name_en if faculty else fields2.get("Faculty", "")
+                },
+                "advisor": {
+                    "advisor_id": advisor.advisor_id if advisor else None,
+                    "advisor_name_th": advisor.advisor_name_th if advisor else fields1.get("Advisor", ""),
+                    "advisor_name_en": advisor.advisor_name_en if advisor else fields2.get("Advisor", "")
+                },
+
                 "students": extracted_students,
                 "keywords": extracted_keywords
             }
         }
 
-    # ==========================================
-    # สเต็ปที่ 2: รับข้อมูลที่ถูกต้องจากหน้าบ้าน มาเซฟลง DB
-    # ==========================================
-    async def save_project_data(self, data, db, current_user):
-        
-        # ==========================================
-        # 🚨 ส่วนที่เพิ่มใหม่: จัดการ Degree และ Advisor
-        # ==========================================
-        actual_degree_id = data.degree_id
-        actual_advisor_id = data.advisor_id
+    @staticmethod
+    async def save_project_data(data, db, current_user):
+        actual_degree_id = data.degree.degree_id
+        actual_advisor_id = data.advisor.advisor_id
+        actual_faculty_id = data.faculty.faculty_id
+        actual_department_id = data.department.department_id
 
-        # ถ้าไม่มี degree_id แต่มีชื่อส่งมา ให้ทำการ Find Match
-        if not actual_degree_id and (data.degree_name_th or data.degree_name_en):
-            db_degrees = await ProjectRepository.get_master_degrees(db) # ดึงข้อมูลปริญญาทั้งหมดมาเทียบ
+        # 1. เช็คและหา Faculty (คณะ)
+        if not actual_faculty_id and (data.faculty.faculty_name_th or data.faculty.faculty_name_en):
+            db_faculties = await ProjectRepository.get_master_faculties(db)
+            match_faculty = ProjectServices.find_match(
+                data.faculty.faculty_name_th, data.faculty.faculty_name_en, db_faculties, "faculty_name_th", "faculty_name_en"
+            )
+            if match_faculty:
+                actual_faculty_id = match_faculty.faculty_id
+
+        # 2. เช็คและหา Department (ภาควิชา)
+        if not actual_department_id and (data.department.department_name_th or data.department.department_name_en):
+            db_departments = await ProjectRepository.get_master_departments(db)
+            match_department = ProjectServices.find_match(
+                data.department.department_name_th, data.department.department_name_en, db_departments, "department_name_th", "department_name_en"
+            )
+            if match_department:
+                actual_department_id = match_department.department_id
+
+        # 3. เช็คและหา Degree (ปริญญา)
+        if not actual_degree_id and (data.degree.degree_name_th or data.degree.degree_name_en):
+            db_degrees = await ProjectRepository.get_master_degrees(db) 
             match_degree = ProjectServices.find_match(
-                data.degree_name_th, data.degree_name_en, db_degrees, "degree_name_th", "degree_name_en"
+                data.degree.degree_name_th, data.degree.degree_name_en, db_degrees, "degree_name_th", "degree_name_en"
             )
             if match_degree:
                 actual_degree_id = match_degree.degree_id
 
-        # ถ้าไม่มี advisor_id แต่มีชื่อส่งมา ให้ทำการ Find Match
-        if not actual_advisor_id and (data.advisor_name_th or data.advisor_name_en):
-            db_advisors = await ProjectRepository.get_master_advisors(db) # ดึงข้อมูลอาจารย์ทั้งหมดมาเทียบ
+        # 4. เช็คและหา Advisor (อาจารย์ที่ปรึกษา)
+        if not actual_advisor_id and (data.advisor.advisor_name_th or data.advisor.advisor_name_en):
+            db_advisors = await ProjectRepository.get_master_advisors(db) 
             match_advisor = ProjectServices.find_match(
-                data.advisor_name_th, data.advisor_name_en, db_advisors, "advisor_name_th", "advisor_name_en"
+                data.advisor.advisor_name_th, data.advisor.advisor_name_en, db_advisors, "advisor_name_th", "advisor_name_en"
             )
             if match_advisor:
                 actual_advisor_id = match_advisor.advisor_id
-        # ==========================================
 
-
-        # 1. บันทึกไฟล์
         project_file = ProjectFile(
             file_id=uuid4(),
             file_name=data.file_info.save_name,
@@ -143,7 +177,7 @@ class UploadServices:
         )
         await ProjectRepository.create_project_file(db, project_file)
 
-        # 2. บันทึก Project (ใช้ actual_degree_id)
+        # 2. บันทึก Project 
         project = Project(
             project_id=uuid4(),
             title_th=data.title_th,
@@ -151,7 +185,7 @@ class UploadServices:
             abstract_th=data.abstract_th,
             abstract_en=data.abstract_en,
             academic_year=data.academic_year,
-            degree_id=actual_degree_id, # เปลี่ยนมาใช้ตัวแปรนี้
+            degree_id=actual_degree_id,
             created_by=current_user.user_id,
             is_active=True,
             file_id=project_file.file_id,
@@ -162,20 +196,20 @@ class UploadServices:
         # 3. บันทึก Author (วนลูปสร้างตามที่หน้าบ้านส่งมา)
         for index, student_data in enumerate(data.students, start=1):
             if not student_data.student_id: 
-                continue # ข้ามถ้าหน้าบ้านไม่ได้ส่งรหัสนักศึกษามา
+                continue 
             
             user = await ProjectServices.get_user_by_student_id(db, student_data.student_id)
             if user:
-                user.user_name_th = student_data.student_name_th # อิงตาม Schema ของคุณ
+                user.user_name_th = student_data.student_name_th
                 user.user_name_en = student_data.student_name_en
-                user.degree_id = actual_degree_id # เปลี่ยนมาใช้ตัวแปรนี้
+                user.degree_id = actual_degree_id 
             else:
                 user = User(
                     user_id=uuid4(),
                     student_id=student_data.student_id,
                     user_name_th=student_data.student_name_th,
                     user_name_en=student_data.student_name_en,
-                    degree_id=actual_degree_id, # เปลี่ยนมาใช้ตัวแปรนี้
+                    degree_id=actual_degree_id,
                     role=Role.STUDENT,
                     email=student_data.student_id + "@kmitl.ac.th",
                     password_hash=None
@@ -189,7 +223,7 @@ class UploadServices:
             )
             await ProjectRepository.create_project_author(db, author)
 
-        # 4. บันทึก Advisor (ใช้ actual_advisor_id)
+        # 4. บันทึก Advisor
         if actual_advisor_id:
             project_advisor = ProjectAdvisor(
                 project_id=project.project_id,
@@ -203,7 +237,6 @@ class UploadServices:
         final_project_keywords = []
 
         for kw in data.keywords:
-            # เช็คว่าคำนี้มีในฐานข้อมูลหรือยัง
             match = ProjectServices.find_match(
                 kw.keyword_text_th, kw.keyword_text_en, db_keywords, "keyword_text_th", "keyword_text_en"
             )
