@@ -16,6 +16,26 @@ class FileInfoInput(BaseModel):
     save_name: str
     thumbnail_path: str
 
+class DegreeInput(BaseModel):
+    degree_id: Optional[UUID] = None
+    degree_name_th: str
+    degree_name_en: str
+
+class DepartmentInput(BaseModel):
+    department_id: Optional[UUID] = None
+    department_name_th: str
+    department_name_en: str
+
+class FacultyInput(BaseModel):
+    faculty_id: Optional[UUID] = None
+    faculty_name_th: str
+    faculty_name_en: str
+
+class AdvisorInput(BaseModel):
+    advisor_id: Optional[UUID] = None
+    advisor_name_th: str
+    advisor_name_en: str
+
 class ProjectSubmitRequest(BaseModel):
     title_th: str
     title_en: str
@@ -23,13 +43,10 @@ class ProjectSubmitRequest(BaseModel):
     abstract_en: str
     academic_year: str
     
-    degree_id: Optional[UUID] = None
-    advisor_id: Optional[UUID] = None
-    
-    degree_name_th: str
-    degree_name_en: str
-    advisor_name_th: str
-    advisor_name_en: str
+    degree: DegreeInput
+    department: DepartmentInput
+    faculty: FacultyInput
+    advisor: AdvisorInput
     
     students: List[StudentInput]
     keywords: List[KeywordInput]
