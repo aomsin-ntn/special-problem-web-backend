@@ -102,7 +102,7 @@ class ProjectServices:
 
             result[pid]["keywords"].append(keyword.dict())
 
-            final_result = list(result.values())
+        final_result = list(result.values())
         return final_result
 
     def find_match(target_th, target_en, items, th_attr, en_attr):
