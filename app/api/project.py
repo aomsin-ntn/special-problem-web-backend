@@ -6,6 +6,7 @@ from fastapi.responses import JSONResponse, FileResponse
 from typing import Annotated
 from sqlmodel import Session
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.exc import SQLAlchemyError
 from uuid import UUID, uuid4
 from datetime import datetime
 
@@ -62,9 +63,6 @@ async def handle_upload(
             detail=f"เกิดข้อผิดพลาดในการอ่านไฟล์: {str(e)}"
         )
 
-# ----------------------------------------------------
-# 🚨 แก้ไข Path ให้ไม่ซ้ำกัน (ดาวน์โหลดตัวไฟล์ PDF)
-# ----------------------------------------------------
 @router.get("/download/file/{project_id}")
 async def download_projectfile(
     db: Annotated[Session, Depends(get_db)],
@@ -173,121 +171,20 @@ async def get_faculty(
 async def save_project(
     data: ProjectSubmitRequest, 
     db: Annotated[Session, Depends(get_db)], 
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    service: UploadServices = Depends() # เรียกใช้ Service
 ):
     try:
-        # 1. สร้าง ProjectFile
-        project_file = ProjectFile(
-            file_id=uuid4(),
-            file_name=data.file_info.save_name,
-            file_path=data.file_info.file_path,
-            thumbnail_path=data.file_info.thumbnail_path,
-            uploaded_at=datetime.utcnow()
-        )
-        await ProjectRepository.create_project_file(db, project_file)
-
-        # 2. สร้าง Project
-        project = Project(
-            project_id=uuid4(),
-            title_th=data.title_th,
-            title_en=data.title_en,
-            abstract_th=data.abstract_th,
-            abstract_en=data.abstract_en,
-            academic_year=data.academic_year,
-            degree_id=data.degree_id,
-            created_by=current_user.user_id,
-            is_active=True,
-            file_id=project_file.file_id,
-            download_count=0
-        )
-        await ProjectRepository.create_project(db, project)
-
-        # 3. สร้าง Advisor
-        if data.advisor_id:
-            project_advisor = ProjectAdvisor(
-                project_id=project.project_id,
-                advisor_id=data.advisor_id,
-                advisor_order=1
-            )
-            await ProjectRepository.create_project_advisor(db, project_advisor)
-
-        # 4. สร้าง User และ ProjectAuthor 
-        for index, student_data in enumerate(data.students, start=1):
-            if not student_data.student_id:
-                continue
-
-            user = await ProjectServices.get_user_by_student_id(db, student_data.student_id)
-            if user:
-                # 🚨 แก้ไขชื่อตัวแปรจาก student_name_th เป็น name_th ให้ตรงกับ Schema ของคุณ
-                user.user_name_th = student_data.name_th
-                user.user_name_en = student_data.name_en
-                user.degree_id = data.degree_id
-            else:
-                user = User(
-                    user_id=uuid4(),
-                    student_id=student_data.student_id,
-                    user_name_th=student_data.name_th,
-                    user_name_en=student_data.name_en,
-                    degree_id=data.degree_id,
-                    role=Role.STUDENT,
-                    email=student_data.student_id + "@kmitl.ac.th",
-                    password_hash=None
-                )
-                await UserRepository.create_user(db, user)
-
-            # ผูก Author ลงใน Project
-            author = ProjectAuthor(
-                project_id=project.project_id,
-                user_id=user.user_id,
-                author_order=index
-            )
-            await ProjectRepository.create_project_author(db, author)
-
-        # 5. จัดการ Keywords
-        db_keywords = await ProjectRepository.get_keywords(db)
-        final_project_keywords = []
-
-        for kw in data.keywords:
-            match = ProjectServices.find_match(
-                kw.th, kw.en, db_keywords, "keyword_text_th", "keyword_text_en"
-            )
-            
-            if match:
-                final_project_keywords.append(match)
-            else:
-                new_keyword = Keyword(
-                    keyword_id=uuid4(),
-                    keyword_text_th=kw.th,
-                    keyword_text_en=kw.en
-                )
-                await ProjectRepository.create_keyword(db, new_keyword)
-                final_project_keywords.append(new_keyword)
-
-        # ผูก Keyword ลงใน Project
-        for order, kw in enumerate(final_project_keywords, start=1):
-            project_keyword = ProjectKeyword(
-                project_id=project.project_id,
-                keyword_id=kw.keyword_id,
-                keyword_order=order
-            )
-            await ProjectRepository.create_project_keyword(db, project_keyword)
-
-        return {"status": "success", "message": "บันทึกข้อมูลโปรเจกต์สำเร็จ", "project_id": project.project_id}
+        # โยนภาระไปให้ Service จัดการให้หมด
+        result = await service.save_project_data(data, db, current_user)
+        return result
 
     except SQLAlchemyError as db_error:
-        # เกิด Error เกี่ยวกับ Database (เช่น ข้อมูลซ้ำ, ID ไม่มีจริง)
-        await db.rollback() # ยกเลิกการเปลี่ยนแปลงทั้งหมดที่ทำมาใน Transaction นี้
+        await db.rollback() 
         print(f"Database Error: {db_error}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="เกิดข้อผิดพลาดในการบันทึกข้อมูลลงฐานข้อมูล โปรดตรวจสอบข้อมูลอีกครั้ง"
-        )
-        
+        raise HTTPException(status_code=500, detail="เกิดข้อผิดพลาดลงฐานข้อมูล")
+
     except Exception as e:
-        # เกิด Error อื่นๆ ที่ไม่คาดคิด (เช่น ตัวแปรพัง, Network หลุด)
         await db.rollback()
         print(f"Unexpected Error: {e}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"เกิดข้อผิดพลาดภายในเซิร์ฟเวอร์: {str(e)}"
-        )
+        raise HTTPException(status_code=500, detail=f"เกิดข้อผิดพลาด: {str(e)}")
