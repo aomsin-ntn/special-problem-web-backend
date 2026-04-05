@@ -1,7 +1,7 @@
 """
 All API Routes
 """
-from fastapi import APIRouter, Depends, UploadFile, File, Query
+from fastapi import APIRouter, Depends, UploadFile, File, Query, HTTPException
 from fastapi.responses import JSONResponse, FileResponse
 from typing import Annotated
 from sqlmodel import Session
