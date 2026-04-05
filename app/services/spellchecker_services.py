@@ -3,6 +3,7 @@ from pythainlp.corpus.common import thai_words
 from attacut import tokenize
 import re
 import difflib
+from wordfreq import top_n_list
 
 
 class SpellChecker:
@@ -12,32 +13,60 @@ class SpellChecker:
         self.thai_dict = set(thai_words())
         self.spell_cache = {}
 
-        # 🔥 English dictionary (basic)
-        self.eng_dict = set([
-            "python", "system", "data", "model", "project", "student",
-            "university", "technology", "application", "computer",
-            "science", "engineering", "analysis", "learning"
-        ])
+        # English dictionary
+        self.eng_dict = set(top_n_list("en", 50000))
 
-    TITLE_KEYS = r'(?:หัวข้อ(?:ปัญหาพิเศษ|สหกิจศึกษา|โครงงานพิเศษ)|สหกิจศึกษา|Title:?|TITLE:?|title:?)'
-    STUDENT_KEYS = r'(?:ชื่อนักศึกษา|Students?|student)'
+    # -------------------------
+    # KEYWORDS
+    # -------------------------
+    TITLE_KEYS = r'(?:หัวข้อ(?:ปัญหาพิเศษ|สหกิจศึกษา|โครงงานพิเศษ)|Title:?|title:?)'
+    STUDENT_KEYS = r'(?:ชื่อนักศึกษา|ชื่อผู้จัดทำ|Student Name|By:?|ผู้จัดทำ|student id?\s+(?:mr|miss|mrs)\b|students?(?=\s*(?:mr\.?|miss\.?|mrs\.?|นาย|นางสาว|นาง)))'
     DEGREE_KEYS = r'(?:ปริญญา|Degree)'
     DEPARTMENT_KEYS = r'(?:ภาควิชา|Department)'
-    FACULTY_KEYS = r'(?:คณะ|Faculty)'
+    FACULTY_KEYS = r'(?:คณะ|Faculty|School)'
     UNIVERSITY_KEYS = r'(?:มหาวิทยาลัย|University)'
-    ACADEMIC_YEAR_KEYS = r'(?:ปีการศึกษา|Academic\s*Year:?|AcademicYear:?|AcademicYear)'
+    ACADEMIC_YEAR_KEYS = r'(?:ปีการศึกษา|Academic\s*Year:?|AcademicYear)'
     ADVISOR_KEYS = r'(?:อาจารย์ที่ปรึกษา|Advisor)'
     ABSTRACT_KEYS = r'(?:บทคัดย่อ|Abstract)'
     KEYWORDS_KEYS = r'(?:คำสำคัญ:?|Keywords:?)'
 
-    def extract_fields(self, text: str) -> dict:
-    # -----------------------
-    # 🔥 normalize text (กัน spacing เพี้ยน)
-    # -----------------------
+    # -------------------------
+    # CLEAN TEXT
+    # -------------------------
+    def clean_text(self, text: str) -> str:
+        if not text:
+            return ""
+
+        text = re.sub(r'\r\n|\r|\n', '', text)
         text = re.sub(r'[ \t]+', ' ', text)
+        text = text.strip()
+
+        # remove ......
+        text = re.sub(r'\.{2,}', '', text)
+
+        # lowercase English
+        text = re.sub(r'[A-Z]+', lambda m: m.group(0).lower(), text)
+
+        # remove weird symbols
+        text = re.sub(r'[^\w\s\.\,\:\-\/\u0E00-\u0E7F]', '', text)
+
+        return text
+
+    # -------------------------
+    # BUILD PATTERN
+    # -------------------------
+    def build_pattern(self, start, end):
+        return rf'{start}\s*(.*?)(?={end}|$)'
+
+    # -------------------------
+    # EXTRACT
+    # -------------------------
+    def extract_fields(self, text: str) -> dict:
+
+        text = self.clean_text(text)
 
         patterns = {
-            'Title': self.build_pattern(self.TITLE_KEYS, self.STUDENT_KEYS),
+            'Title': rf'{self.TITLE_KEYS}\s*(.*?)(?={self.STUDENT_KEYS}|$)',
             'Degree': self.build_pattern(self.DEGREE_KEYS, self.DEPARTMENT_KEYS),
             'Department': self.build_pattern(self.DEPARTMENT_KEYS, self.FACULTY_KEYS),
             'Faculty': self.build_pattern(self.FACULTY_KEYS, self.UNIVERSITY_KEYS),
@@ -50,82 +79,101 @@ class SpellChecker:
 
         results = {}
 
-        # -----------------------
-        # extract field อื่น
-        # -----------------------
+        # -------------------------
+        # extract fields ✅ FIXED
+        # -------------------------
         for key, pat in patterns.items():
-            m = re.search(pat, text, flags=re.DOTALL)
+            m = re.search(pat, text, flags=re.DOTALL | re.IGNORECASE)
             if m:
                 results[key] = m.group(1).strip()
 
-        # =========================
-        # 🔥 STEP 1: extract "name block" ก่อน
-        # =========================
+        # -------------------------
+        # extract students ✅ FIXED
+        # -------------------------
         name_block = None
+        
+        # ใช้ STUDENT_KEYS เพื่อหาจุดเริ่มต้นที่แม่นยำขึ้น
         m = re.search(
-            r'(?:ชื่อนักศึกษา|Students|student|students?)(.*?)(?=\s*(?:ปริญญา|Degree))',
+            rf'(?:{self.STUDENT_KEYS})(.*?)(?=\s*(?:ปริญญา|degree))',
             text,
-            flags=re.DOTALL
+            flags=re.DOTALL | re.IGNORECASE
         )
 
         if m:
             name_block = m.group(1).strip()
+            # ลบส่วนที่เคยชดเชย match_prefix ของเดิมทิ้งไป เพื่อไม่ให้ชื่อเบิ้ล
 
         students = []
 
-        # =========================
-        # 🔥 STEP 2: parse ใน block เท่านั้น
-        # =========================
         if name_block:
             matches = re.findall(
-                r'([^\n]+?)\s*(?:รหัสนักศึกษา|Student ID|ID)\s*(\d+)',
-                name_block
+                r'((?:mr\.?|miss\.?|mrs\.?|นาย|นางสาว|นาง)?\s*[a-zA-Z\u0E00-\u0E7F\s\.\-]+?)\s*(?:รหัสนักศึกษา|student id|id)?\s*(\d{6,})',
+                name_block,
+                flags=re.IGNORECASE
             )
 
             for name, sid in matches:
-                students.append({
-                    "name": name.strip(),
-                    "id": sid.strip()
-                })
+                name_clean = name.strip()
 
-        # =========================
-        # 🔥 STEP 3: fallback
-        # =========================
-        if not students and name_block:
-            lines = [l.strip() for l in name_block.split('\n') if l.strip()]
+                # 1. ลบคำขยะ (students/ชื่อนักศึกษา) ที่อาจคั่นอยู่หน้าชื่อคนที่ 2
+                name_clean = re.sub(r'^(?:students?|ชื่อนักศึกษา)\s*', '', name_clean, flags=re.IGNORECASE).strip()
+                
+                # 2. ป้องกันคำนำหน้าซ้ำซ้อน (เช่น "นางสาว นางสาว" หรือ "miss miss")
+                name_clean = re.sub(r'^(mr\.?|miss\.?|mrs\.?|นาย|นางสาว|นาง)\s*\1', r'\1', name_clean, flags=re.IGNORECASE).strip()
 
-            for line in lines:
-                id_match = re.search(r'\d{6,}', line)
-                name = re.sub(r'\d{6,}', '', line).strip()
+                if not name_clean:
+                    continue
 
                 students.append({
-                    "name": name if name else None,
-                    "id": id_match.group() if id_match else None
+                    "name": name_clean,
+                    "id": sid.strip() if sid else None
                 })
 
-        # -----------------------
-        # assign
-        # -----------------------
+            # 🔥 fallback ถ้าไม่เจออะไรเลย
+            if not students and name_block:
+                students.append({
+                    "name": name_block.strip(),
+                    "id": None
+                })
+
         if students:
             results['Students'] = students
 
+        # -------------------------
+        # POST CLEAN
+        # -------------------------
+        for k, v in results.items():
+            if isinstance(v, str):
+
+                v = v.replace("\n", " ")
+                v = re.sub(r'\.{2,}', '', v)
+                v = v.lstrip(': ').strip()
+                v = re.sub(r'\s+', ' ', v)
+
+                results[k] = v.strip()
+
+        if 'Title' not in results:
+            m = re.search(r'^(.*?)(?=ชื่อนักศึกษา)', text)
+            if m:
+                results['Title'] = m.group(1).strip()
+
+        # fix University
+        if 'University' in results:
+            uni = results['University']
+            uni = re.sub(r'(University)\s*\1+', r'\1', uni, flags=re.IGNORECASE)
+            uni = re.sub(r'\s+', ' ', uni)
+            results['University'] = uni.strip()
+
+        if 'Keywords' in results and isinstance(results['Keywords'], str):
+            # แยกคำด้วยเครื่องหมาย , แล้วตัดช่องว่างหน้า-หลังของแต่ละคำออก
+            keywords_list = [kw.strip() for kw in results['Keywords'].split(',')]
+            # กรองเอาเฉพาะคำที่ไม่ใช่ค่าว่าง
+            results['Keywords'] = [kw for kw in keywords_list if kw]
+
         return results
 
-    def build_pattern(self,start, end):
-        return rf'{start}\s*(.*?)(?=\s*{end}|$)'
-
-
-    def clean_text(self,text):
-        if not text:
-            return text
-
-        text = text.replace("\n", " ")
-        text = re.sub(r'\s+', ' ', text)
-        text = text.strip()
-        return text
-
     # -------------------------
-    # language check
+    # SPELL CHECK
     # -------------------------
     def is_english(self, word):
         return re.match(r'^[a-zA-Z]+$', word) is not None
@@ -133,9 +181,6 @@ class SpellChecker:
     def is_symbol(self, word):
         return re.match(r'^[^a-zA-Z0-9\u0E00-\u0E7F]+$', word) is not None
 
-    # -------------------------
-    # English spell check
-    # -------------------------
     def check_english(self, word):
         word_lower = word.lower()
 
@@ -149,9 +194,6 @@ class SpellChecker:
 
         return True, []
 
-    # -------------------------
-    # main
-    # -------------------------
     def check_spelling(self, word_list):
         correct = 0
         incorrect = 0
@@ -163,17 +205,10 @@ class SpellChecker:
             if not word:
                 continue
 
-            # 🔥 0) symbol → ข้าม
-            if self.is_symbol(word):
+            if self.is_symbol(word) or word.isdigit():
                 correct += 1
                 continue
 
-            # 🔥 0.1) ตัวเลขล้วน → ข้าม
-            if word.isdigit():
-                correct += 1
-                continue
-
-            # 1) error_dict
             if word in self.error_dict and self.error_dict[word]["count"] >= self.threshold:
                 incorrect += 1
                 wrong_words.append({
@@ -183,7 +218,6 @@ class SpellChecker:
                 })
                 continue
 
-            # 2) English check
             if self.is_english(word):
                 is_correct, suggestions = self.check_english(word)
 
@@ -198,12 +232,10 @@ class SpellChecker:
                     })
                 continue
 
-            # 3) ไทย dict
             if word in self.thai_dict:
                 correct += 1
                 continue
 
-            # 4) spell ไทย
             if word in self.spell_cache:
                 suggestions = self.spell_cache[word]
             else:
@@ -233,17 +265,14 @@ class SpellChecker:
         }
 
     # -------------------------
-    # compare
+    # COMPARE
     # -------------------------
     def compare(self, text1, text2):
-        token1 = tokenize(text1)
-        token2 = tokenize(text2)
+        token1 = tokenize(self.clean_text(text1))
+        token2 = tokenize(self.clean_text(text2))
 
-        cleaned1 = [w for w in token1 if w.strip()]
-        cleaned2 = [w for w in token2 if w.strip()]
-
-        result1 = self.check_spelling(cleaned1)
-        result2 = self.check_spelling(cleaned2)
+        result1 = self.check_spelling(token1)
+        result2 = self.check_spelling(token2)
 
         if result1["error_percent"] > result2["error_percent"]:
             return {"choose": "text2", "result": result2}

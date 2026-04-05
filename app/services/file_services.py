@@ -13,13 +13,13 @@ class FileService:
 
     def save(self, file):
         ext = Path(file.filename).suffix
-        safe_name = f"{uuid4().hex}{ext}"
-        dest = self.upload_dir / safe_name
+        save_name = f"{uuid4().hex}{ext}"
+        dest = self.upload_dir / save_name
 
         with dest.open("wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
 
-        return dest, safe_name
+        return dest, save_name
 
     def save_thumbnail(self, image):
         thumbnail_path = self.thumbnail_dir / f"{uuid4().hex}_thumb.png"
