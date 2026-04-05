@@ -16,9 +16,6 @@ class SpellChecker:
         # English dictionary
         self.eng_dict = set(top_n_list("en", 50000))
 
-    # -------------------------
-    # KEYWORDS
-    # -------------------------
     TITLE_KEYS = r'(?:หัวข้อ(?:ปัญหาพิเศษ|สหกิจศึกษา|โครงงานพิเศษ)|Title:?|title:?)'
     STUDENT_KEYS = r'(?:ชื่อนักศึกษา|ชื่อผู้จัดทำ|Student Name|By:?|ผู้จัดทำ|student id?\s+(?:mr|miss|mrs)\b|students?(?=\s*(?:mr\.?|miss\.?|mrs\.?|นาย|นางสาว|นาง)))'
     DEGREE_KEYS = r'(?:ปริญญา|Degree)'
@@ -30,9 +27,7 @@ class SpellChecker:
     ABSTRACT_KEYS = r'(?:บทคัดย่อ|Abstract)'
     KEYWORDS_KEYS = r'(?:คำสำคัญ:?|Keywords:?)'
 
-    # -------------------------
-    # CLEAN TEXT
-    # -------------------------
+
     def clean_text(self, text: str) -> str:
         if not text:
             return ""
@@ -52,15 +47,10 @@ class SpellChecker:
 
         return text
 
-    # -------------------------
-    # BUILD PATTERN
-    # -------------------------
+
     def build_pattern(self, start, end):
         return rf'{start}\s*(.*?)(?={end}|$)'
 
-    # -------------------------
-    # EXTRACT
-    # -------------------------
     def extract_fields(self, text: str) -> dict:
 
         text = self.clean_text(text)
@@ -79,17 +69,11 @@ class SpellChecker:
 
         results = {}
 
-        # -------------------------
-        # extract fields ✅ FIXED
-        # -------------------------
         for key, pat in patterns.items():
             m = re.search(pat, text, flags=re.DOTALL | re.IGNORECASE)
             if m:
                 results[key] = m.group(1).strip()
 
-        # -------------------------
-        # extract students ✅ FIXED
-        # -------------------------
         name_block = None
         
         # ใช้ STUDENT_KEYS เพื่อหาจุดเริ่มต้นที่แม่นยำขึ้น
@@ -139,9 +123,6 @@ class SpellChecker:
         if students:
             results['Students'] = students
 
-        # -------------------------
-        # POST CLEAN
-        # -------------------------
         for k, v in results.items():
             if isinstance(v, str):
 
@@ -179,9 +160,6 @@ class SpellChecker:
 
         return results
 
-    # -------------------------
-    # SPELL CHECK
-    # -------------------------
     def is_english(self, word):
         return re.match(r'^[a-zA-Z]+$', word) is not None
 
@@ -271,9 +249,6 @@ class SpellChecker:
             "wrong_words": wrong_words
         }
 
-    # -------------------------
-    # COMPARE
-    # -------------------------
     def compare(self, text1, text2):
         token1 = tokenize(self.clean_text(text1))
         token2 = tokenize(self.clean_text(text2))
