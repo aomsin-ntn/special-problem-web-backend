@@ -17,4 +17,3 @@ class TextService:
         fields = self.checker.extract_fields(final_text)
 
         return fields
-

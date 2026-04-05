@@ -46,7 +46,6 @@ class ProjectSubmitRequest(BaseModel):
     degree: DegreeInput
     department: DepartmentInput
     faculty: FacultyInput
-    
     advisors: List[AdvisorInput]
     students: List[StudentInput]
     keywords: List[KeywordInput]
