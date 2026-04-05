@@ -138,12 +138,10 @@ class ProjectServices:
 
         candidates = list(mapping.keys())
 
-        # 🔥 1. partial match ก่อน
         for key in candidates:
             if target in key or key in target:
                 return mapping[key]
 
-        # 🔥 2. fuzzy match
         match = difflib.get_close_matches(target, candidates, n=1, cutoff=0.5)
 
         if match:
