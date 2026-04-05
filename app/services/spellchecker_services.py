@@ -165,8 +165,15 @@ class SpellChecker:
             results['University'] = uni.strip()
 
         if 'Keywords' in results and isinstance(results['Keywords'], str):
-            # แยกคำด้วยเครื่องหมาย , แล้วตัดช่องว่างหน้า-หลังของแต่ละคำออก
-            keywords_list = [kw.strip() for kw in results['Keywords'].split(',')]
+            keywords_text = results['Keywords']
+            # ตรวจสอบว่ามีเครื่องหมายจุลภาค (,) หรือไม่
+            if ',' in keywords_text:
+                # แยกคำด้วยเครื่องหมาย , แล้วตัดช่องว่างหน้า-หลังของแต่ละคำออก
+                keywords_list = [kw.strip() for kw in keywords_text.split(',')]
+            else:
+                # แยกคำด้วยเว้นวรรค
+                keywords_list = [kw.strip() for kw in keywords_text.split()]
+            
             # กรองเอาเฉพาะคำที่ไม่ใช่ค่าว่าง
             results['Keywords'] = [kw for kw in keywords_list if kw]
 

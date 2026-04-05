@@ -92,7 +92,11 @@ class UploadServices:
                 "abstract_en": fields2.get("Abstract", ""),
                 "academic_year": fields1.get("AcademicYear", ""),
                 "degree_id": degree.degree_id if degree else None,
+                "degree_name_th": degree.degree_name_th if degree else fields1.get("Degree", ""),
+                "degree_name_en": degree.degree_name_en if degree else fields2.get("Degree", ""),
                 "advisor_id": advisor.advisor_id if advisor else None,
+                "advisor_name_th": advisor.advisor_name_th if advisor else fields1.get("Advisor", ""),
+                "advisor_name_en": advisor.advisor_name_en if advisor else fields2.get("Advisor", ""),
                 "students": extracted_students,
                 "keywords": extracted_keywords
             }
@@ -103,6 +107,32 @@ class UploadServices:
     # ==========================================
     async def save_project_data(self, data, db, current_user):
         
+        # ==========================================
+        # 🚨 ส่วนที่เพิ่มใหม่: จัดการ Degree และ Advisor
+        # ==========================================
+        actual_degree_id = data.degree_id
+        actual_advisor_id = data.advisor_id
+
+        # ถ้าไม่มี degree_id แต่มีชื่อส่งมา ให้ทำการ Find Match
+        if not actual_degree_id and (data.degree_name_th or data.degree_name_en):
+            db_degrees = await ProjectRepository.get_master_degrees(db) # ดึงข้อมูลปริญญาทั้งหมดมาเทียบ
+            match_degree = ProjectServices.find_match(
+                data.degree_name_th, data.degree_name_en, db_degrees, "degree_name_th", "degree_name_en"
+            )
+            if match_degree:
+                actual_degree_id = match_degree.degree_id
+
+        # ถ้าไม่มี advisor_id แต่มีชื่อส่งมา ให้ทำการ Find Match
+        if not actual_advisor_id and (data.advisor_name_th or data.advisor_name_en):
+            db_advisors = await ProjectRepository.get_master_advisors(db) # ดึงข้อมูลอาจารย์ทั้งหมดมาเทียบ
+            match_advisor = ProjectServices.find_match(
+                data.advisor_name_th, data.advisor_name_en, db_advisors, "advisor_name_th", "advisor_name_en"
+            )
+            if match_advisor:
+                actual_advisor_id = match_advisor.advisor_id
+        # ==========================================
+
+
         # 1. บันทึกไฟล์
         project_file = ProjectFile(
             file_id=uuid4(),
@@ -113,7 +143,7 @@ class UploadServices:
         )
         await ProjectRepository.create_project_file(db, project_file)
 
-        # 2. บันทึก Project
+        # 2. บันทึก Project (ใช้ actual_degree_id)
         project = Project(
             project_id=uuid4(),
             title_th=data.title_th,
@@ -121,7 +151,7 @@ class UploadServices:
             abstract_th=data.abstract_th,
             abstract_en=data.abstract_en,
             academic_year=data.academic_year,
-            degree_id=data.degree_id,
+            degree_id=actual_degree_id, # เปลี่ยนมาใช้ตัวแปรนี้
             created_by=current_user.user_id,
             is_active=True,
             file_id=project_file.file_id,
@@ -136,16 +166,16 @@ class UploadServices:
             
             user = await ProjectServices.get_user_by_student_id(db, student_data.student_id)
             if user:
-                user.user_name_th = student_data.name_th
-                user.user_name_en = student_data.name_en
-                user.degree_id = data.degree_id
+                user.user_name_th = student_data.student_name_th # อิงตาม Schema ของคุณ
+                user.user_name_en = student_data.student_name_en
+                user.degree_id = actual_degree_id # เปลี่ยนมาใช้ตัวแปรนี้
             else:
                 user = User(
                     user_id=uuid4(),
                     student_id=student_data.student_id,
-                    user_name_th=student_data.name_th,
-                    user_name_en=student_data.name_en,
-                    degree_id=data.degree_id,
+                    user_name_th=student_data.student_name_th,
+                    user_name_en=student_data.student_name_en,
+                    degree_id=actual_degree_id, # เปลี่ยนมาใช้ตัวแปรนี้
                     role=Role.STUDENT,
                     email=student_data.student_id + "@kmitl.ac.th",
                     password_hash=None
@@ -159,11 +189,11 @@ class UploadServices:
             )
             await ProjectRepository.create_project_author(db, author)
 
-        # 4. บันทึก Advisor
-        if data.advisor_id:
+        # 4. บันทึก Advisor (ใช้ actual_advisor_id)
+        if actual_advisor_id:
             project_advisor = ProjectAdvisor(
                 project_id=project.project_id,
-                advisor_id=data.advisor_id,
+                advisor_id=actual_advisor_id,
                 advisor_order=1 
             )
             await ProjectRepository.create_project_advisor(db, project_advisor)
@@ -175,7 +205,7 @@ class UploadServices:
         for kw in data.keywords:
             # เช็คว่าคำนี้มีในฐานข้อมูลหรือยัง
             match = ProjectServices.find_match(
-                kw.th, kw.en, db_keywords, "keyword_text_th", "keyword_text_en"
+                kw.keyword_text_th, kw.keyword_text_en, db_keywords, "keyword_text_th", "keyword_text_en"
             )
             
             if match:
@@ -183,8 +213,8 @@ class UploadServices:
             else:
                 new_keyword = Keyword(
                     keyword_id=uuid4(),
-                    keyword_text_th=kw.th,
-                    keyword_text_en=kw.en
+                    keyword_text_th=kw.keyword_text_th,
+                    keyword_text_en=kw.keyword_text_en
                 )
                 await ProjectRepository.create_keyword(db, new_keyword)
                 final_project_keywords.append(new_keyword)
