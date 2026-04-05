@@ -17,7 +17,6 @@ class UserRepository:
     
     @staticmethod
     def get_user_profile(db: Session, user_id: str):
-
         result = db.exec(
             select(User, Degree, Department, Faculty)
             .where(User.user_id == user_id)
@@ -27,4 +26,13 @@ class UserRepository:
             .join(Faculty, Department.faculty_id == Faculty.faculty_id, isouter=True)
         ).first()
         
+        return result
+
+    @staticmethod
+    async def get_user_by_student_id(db: Session, student_id: str):
+        result = db.exec(
+            select(User)
+            .where(User.student_id == student_id)
+        ).first()
+
         return result

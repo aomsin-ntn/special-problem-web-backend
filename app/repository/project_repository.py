@@ -11,6 +11,8 @@ from app.models.department import Department
 from app.models.advisor import Advisor
 from app.models.project_file import ProjectFile
 from app.models.project_advisor import ProjectAdvisor
+from app.models.project_author import ProjectAuthor
+from app.models.project_keyword import ProjectKeyword
 from app.models.degree_department import DegreeDepartment
 from app.models.faculty import Faculty
 from uuid import UUID
@@ -62,6 +64,34 @@ class ProjectRepository:
         db.commit()
         db.refresh(project_file)
         return project_file
+    
+    @staticmethod
+    async def create_project_author(db: AsyncSession, project_author: ProjectAuthor):
+        db.add(project_author)
+        db.commit()
+        db.refresh(project_author)
+        return project_author
+
+    @staticmethod
+    async def create_project_advisor(db: AsyncSession, project_advisor: ProjectAdvisor):
+        db.add(project_advisor)
+        db.commit()
+        db.refresh(project_advisor)
+        return project_advisor
+    
+    @staticmethod
+    async def create_keyword(db: AsyncSession, keyword: Keyword):
+        db.add(keyword)
+        db.commit()
+        db.refresh(keyword)
+        return keyword
+
+    @staticmethod
+    async def create_project_keyword(db: AsyncSession, project_keyword: ProjectKeyword):
+        db.add(project_keyword)
+        db.commit()
+        db.refresh(project_keyword)
+        return project_keyword
 
     @staticmethod
     async def delete_project(db: Session, project_id: UUID):
@@ -251,11 +281,11 @@ class ProjectRepository:
         db.commit()
         return project_file
 
-    # @staticmethod
-    # async def update_project(db:Session,project_id:UUID,project,):
-    #     project = db.exec(
-    #         select(Project, ProjectFiles)
-    #     )
+    @staticmethod
+    async def update_project(db:Session,project_id:UUID,project,):
+        project = db.exec(
+            select(Project, ProjectFiles)
+        )
 
     @staticmethod
     async def get_master_faculties(db:Session):
@@ -284,3 +314,10 @@ class ProjectRepository:
             select(Degree)      
         ).all()
         return degrees
+
+    @staticmethod
+    async def get_keywords(db:Session):
+        keywords = db.exec(
+            select(Keyword)      
+        ).all()
+        return keywords   
