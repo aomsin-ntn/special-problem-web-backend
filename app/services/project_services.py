@@ -1,3 +1,4 @@
+from app.models import department
 from app.repository.project_repository import ProjectRepository
 from sqlmodel import Session
 from app.schemas.root_schema import GetProjectRequestParams
@@ -76,11 +77,14 @@ class ProjectServices:
                 project_dict["degree"] = degree.dict()
                 project_dict["department"] = department.dict()
                 project_dict["project_file"] = project_file.dict()
-                project_dict["advisor"] = advisor.dict()
+                project_dict["advisors"] = []
                 result[pid] = project_dict
 
             if user.user_id not in [u["user_id"] for u in result[pid]["authors"]]:
                 result[pid]["authors"].append(user.model_dump())
+
+            if advisor.advisor_id not in [a["advisor_id"] for a in result[pid]["advisors"]]:
+                result[pid]["advisors"].append(advisor.model_dump())
 
             if keyword.keyword_id not in [k["keyword_id"] for k in result[pid]["keywords"]]:
                 result[pid]["keywords"].append(keyword.model_dump())
@@ -92,15 +96,21 @@ class ProjectServices:
     async def get_most_downloaded_projects(db: Session):
         projects = await ProjectRepository.get_most_downloaded_projects(db)
         result = {}
-        for project, keyword in projects:
+        for project, keyword, department in projects:
             pid = project.project_id
 
             if pid not in result:
                 project_dict = project.dict()
                 project_dict["keywords"] = []
+                project_dict["departments"] = []
                 result[pid] = project_dict
 
-            result[pid]["keywords"].append(keyword.dict())
+            if department.department_id not in [d["department_id"] for d in result[pid]["departments"]]:
+                result[pid]["departments"].append(department.model_dump())
+
+            if keyword.keyword_id not in [k["keyword_id"] for k in result[pid]["keywords"]]:
+                result[pid]["keywords"].append(keyword.model_dump())
+            
 
         final_result = list(result.values())
         return final_result

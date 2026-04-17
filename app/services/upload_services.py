@@ -127,7 +127,12 @@ class UploadServices:
                 "advisors": extracted_advisors,
                 "students": extracted_students,
                 "keywords": extracted_keywords
-            }
+            },
+
+            "spell_errors": [
+                {"word": "การ", "suggestions": ["การ", "กา"]},
+                {"word": "ข้อมูล", "suggestions": ["ข้อมูลลลล", "คำที่แก้"]}
+            ]
         }
 
     @staticmethod

@@ -24,13 +24,17 @@ class ProjectRepository:
     async def get_most_downloaded_projects(db: Session):
         subquery = (
             select(Project.project_id)
+            .where(Project.is_active == True)
             .order_by(Project.downloaded_count.desc())
             .limit(5)
             .subquery()
         )
 
         result = db.exec(
-            select(Project, Keyword)
+            select(Project, Keyword, Department)
+            .join(Degree, Project.degree_id == Degree.degree_id)
+            .join(DegreeDepartment, Degree.degree_id == DegreeDepartment.degree_id)
+            .join(Department, DegreeDepartment.department_id == Department.department_id)
             .join(ProjectKeyword, Project.project_id == ProjectKeyword.project_id)
             .join(Keyword, ProjectKeyword.keyword_id == Keyword.keyword_id)
             .where(Project.project_id.in_(subquery))
