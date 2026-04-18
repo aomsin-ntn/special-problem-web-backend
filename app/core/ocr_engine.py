@@ -7,11 +7,12 @@ from pdf2image import convert_from_path
 import easyocr
 import pymupdf
 
-class OCREngine:
+_shared_reader = easyocr.Reader(["th", "en"], gpu=False)
 
+class OCREngine:
     def __init__(self, poppler_path: str | None = None):
         self.poppler_path = poppler_path
-        self.reader = easyocr.Reader(["th", "en"], gpu=False)
+        self.reader = _shared_reader
 
     @staticmethod
     def join_text(ocr_result, sep=" ") -> str:
@@ -83,7 +84,7 @@ class OCREngine:
         return [(bbox, text, conf) for (_, _, bbox, text, conf) in sorted_result]
 
 
-    def process_document_ocr(self, file_path: str, page_num: int = 4) -> dict:
+    def process_document_ocr(self, file_path: str, page_num: int) -> dict:
 
         img_bgr = self.pdf_to_image(file_path, page_num)
         img_bin = self.preprocess_ocr(img_bgr)
