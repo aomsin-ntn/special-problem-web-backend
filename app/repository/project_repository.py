@@ -18,6 +18,9 @@ from app.models.faculty import Faculty
 from uuid import UUID
 from app.schemas.root_schema import GetProjectRequestParams
 from sqlalchemy import func
+from app.models.incorrect_word import IncorrectWord
+from app.models.correction_dictionary import CorrectionDictionary
+from app.models.custom_dictionary import CustomDictionary
 
 class ProjectRepository:
     @staticmethod
@@ -58,6 +61,22 @@ class ProjectRepository:
             .join(ProjectKeyword, Project.project_id == ProjectKeyword.project_id)
             .join(Keyword, ProjectKeyword.keyword_id == Keyword.keyword_id)
             .where(Project.project_id == project_id, Project.is_active == True)
+        ).all()
+        return result
+    
+    @staticmethod
+    async def get_error_dict(db: AsyncSession):
+        result = db.exec(
+            select(IncorrectWord,CorrectionDictionary)
+            .join(CorrectionDictionary,IncorrectWord.word_dic_id == CorrectionDictionary.word_dic_id)
+            .where(IncorrectWord.count >= 10 )
+        ).all()
+        return result
+    
+    @staticmethod
+    async def get_custom_dict(db: AsyncSession):
+        result = db.exec(
+            select(CustomDictionary)
         ).all()
         return result
 
@@ -290,12 +309,6 @@ class ProjectRepository:
         project.downloaded_count += 1
         db.commit()
         return project_file
-
-    @staticmethod
-    async def update_project(db:Session,project_id:UUID,project,):
-        project = db.exec(
-            select(Project, ProjectFiles)
-        )
 
     @staticmethod
     async def get_master_faculties(db:Session):
