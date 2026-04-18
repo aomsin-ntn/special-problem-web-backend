@@ -3,7 +3,7 @@ from uuid import uuid4
 import shutil
 import cv2
 
-class FileService:
+class FileServices:
     def __init__(self, upload_dir="uploads", thumbnail_dir="thumbnails"):
         self.upload_dir = Path(upload_dir)
         self.thumbnail_dir = Path(thumbnail_dir)

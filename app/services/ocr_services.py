@@ -1,6 +1,6 @@
 from app.core.ocr_engine import OCREngine
 
-class OCRService:
+class OCRServices:
     def __init__(self, poppler_path):
         self.engine = OCREngine(poppler_path=poppler_path)
 

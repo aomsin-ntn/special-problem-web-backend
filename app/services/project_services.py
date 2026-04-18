@@ -1,6 +1,7 @@
 from app.models import department
 from app.repository.project_repository import ProjectRepository
 from sqlmodel import Session
+from fastapi import HTTPException
 from app.schemas.root_schema import GetProjectRequestParams
 from uuid import UUID
 from app.repository.user_repository import UserRepository
@@ -12,6 +13,16 @@ class ProjectServices:
     async def get_projects(db: Session, request: GetProjectRequestParams):
         projects = await ProjectRepository.get_projects(db, request)
         return projects
+    
+    @staticmethod
+    async def get_error_dict(db: Session):
+        error_dict = await ProjectRepository.get_error_dict(db)
+        return error_dict
+    
+    @staticmethod
+    async def get_custom_dict(db: Session):
+        custom_dict = await ProjectRepository.get_custom_dict(db)
+        return custom_dict
 
     @staticmethod
     async def delete_project(db: Session, project_id: int):

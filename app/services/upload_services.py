@@ -1,6 +1,6 @@
-from app.services.file_services import FileService
-from app.services.ocr_services import OCRService
-from app.services.text_services import TextService
+from app.services.file_services import FileServices
+from app.services.ocr_services import OCRServices
+from app.services.text_services import TextServices
 from app.config import settings
 from app.repository.project_repository import ProjectRepository
 from app.services.project_services import ProjectServices
@@ -18,27 +18,30 @@ from itertools import zip_longest
 
 class UploadServices:
     def __init__(self):
-        self.file_service = FileService()
-        self.ocr_service = OCRService(poppler_path=settings.poppler_path)
-        self.text_service = TextService()
+        self.file_services = FileServices()
+        self.ocr_services = OCRServices(poppler_path=settings.poppler_path)
+        self.text_services = TextServices()
 
 
     async def handle_upload(self, file, pages, db, current_user):
         # 1. save file
-        dest, save_name = self.file_service.save(file)
+        dest, save_name = self.file_services.save(file)
 
         # 2. thumbnail
-        thumbnail_img = self.ocr_service.get_thumbnail(str(dest))
-        thumbnail_path = self.file_service.save_thumbnail(thumbnail_img)
+        thumbnail_img = self.ocr_services.get_thumbnail(str(dest))
+        thumbnail_path = self.file_services.save_thumbnail(thumbnail_img)
 
         # 3. OCR + extract
         pages = sorted(pages)[:2]
-        ocr1, pdf1 = self.ocr_service.extract(str(dest), pages[0])
-        ocr2, pdf2 = self.ocr_service.extract(str(dest), pages[1])
+        ocr1, ext1 = self.ocr_services.extract(str(dest), pages[0])
+        ocr2, ext2 = self.ocr_services.extract(str(dest), pages[1])
 
         # 4. process text
-        fields1 = self.text_service.process(ocr1, pdf1)
-        fields2 = self.text_service.process(ocr2, pdf2)
+        fields1 ,spell1 = await self.text_services.process(ocr1, ext1 ,db)
+        fields2 ,spell2 = await self.text_services.process(ocr2, ext2 ,db)
+
+        print(spell1)
+        print(spell2)
 
         degrees = await ProjectRepository.get_master_degrees(db)
         advisors = await ProjectRepository.get_master_advisors(db)
