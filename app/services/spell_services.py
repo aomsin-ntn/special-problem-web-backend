@@ -1,20 +1,12 @@
-from pythainlp.spell import spell
-from pythainlp.corpus.common import thai_words
-from attacut import tokenize
 import re
 import difflib
+import deepcut
+from pythainlp.spell import spell
+from pythainlp.corpus.common import thai_words
 from wordfreq import top_n_list
+from app.services.project_services import ProjectServices
 
-
-class SpellChecker:
-    def __init__(self, error_dict, threshold=10):
-        self.error_dict = error_dict
-        self.threshold = threshold
-        self.thai_dict = set(thai_words())
-        self.spell_cache = {}
-
-        # English dictionary
-        self.eng_dict = set(top_n_list("en", 50000))
+class SpellServices:
 
     TITLE_KEYS = r'(?:หัวข้อ(?:ปัญหาพิเศษ|สหกิจศึกษา|โครงงานพิเศษ)|Title:?|title:?)'
     STUDENT_KEYS = r'(?:ชื่อนักศึกษา|ชื่อผู้จัดทำ|Student Name|By:?|ผู้จัดทำ|student id?\s+(?:mr|miss|mrs)\b|students?(?=\s*(?:mr\.?|miss\.?|mrs\.?|นาย|นางสาว|นาง)))'
@@ -27,30 +19,86 @@ class SpellChecker:
     ABSTRACT_KEYS = r'(?:บทคัดย่อ|Abstract)'
     KEYWORDS_KEYS = r'(?:คำสำคัญ:?|Keywords:?)'
 
+    def __init__(self, error_dict=None, custom_dict=None):
+        self.spell_cache = {}
+        self.error_dict = {}
+        if error_dict:
+            for item in error_dict:
+                wrong = item[0]
+                correct = item[1]
+                self.error_dict[wrong] = {"correct": correct}
+        self.custom_segmentation_dict = list(set(custom_dict)) if custom_dict else []
+        self.thai_dict = set(thai_words())
+        self.eng_dict = set(top_n_list("en", 50000))
 
     def clean_text(self, text: str) -> str:
-        if not text:
-            return ""
+        if not text: return ""
+        text = re.sub(r'[\r\n\t]+', ' ', text)
+        text = re.sub(r'\.{2,}', '.', text)
+        text = re.sub(r'[^\w\s\.\,\:\-\/\u0E00-\u0E7F\(\)\[\]\@\%\+\#]', '', text)
+        return re.sub(r'\s+', ' ', text).strip()
 
-        text = re.sub(r'\r\n|\r|\n', '', text)
-        text = re.sub(r'[ \t]+', ' ', text)
-        text = text.strip()
+    def get_suggestions(self, word: str, is_eng: bool):
+        """ใช้สำหรับคำที่หาไม่เจอทั้งใน Error Dict และ Standard Dict"""
+        if is_eng:
+            return difflib.get_close_matches(word.lower(), self.eng_dict, n=3, cutoff=0.8)
+        
+        if word in self.spell_cache: 
+            return self.spell_cache[word]
+            
+        sug = spell(word, engine="symspell")
+        self.spell_cache[word] = sug
+        return sug
 
-        # remove ......
-        text = re.sub(r'\.{2,}', '', text)
+    def check_spelling(self, word_list: list) -> dict:
+        stats = {"total": 0, "correct": 0, "incorrect": 0, "wrong_words": []}
+        
+        for word in [w.strip() for w in word_list if w.strip()]:
+            stats["total"] += 1
+            
+            # 1. ข้ามตัวเลข (ไทย/อารบิก) และสัญลักษณ์
+            if word.isdigit() or re.match(r'^[๐-๙]+$', word) or re.match(r'^[^a-zA-Z0-9\u0E00-\u0E7F]+$', word):
+                stats["correct"] += 1
+                continue
 
-        # lowercase English
-        text = re.sub(r'[A-Z]+', lambda m: m.group(0).lower(), text)
+            # 2. Priority 1: ตรวจสอบใน Error Dict (Database) ก่อนเสมอ
+            if word in self.error_dict:
+                stats["incorrect"] += 1
+                stats["wrong_words"].append({
+                    "word": word,
+                    "suggestions": [self.error_dict[word]["correct"]],
+                    "source": "error_dict"
+                })
+                continue
 
-        # remove weird symbols
-        text = re.sub(r'[^\w\s\.\,\:\-\/\u0E00-\u0E7F]', '', text)
+            # 3. Priority 2: ตรวจสอบความถูกต้องตาม Standard Dict
+            is_eng = bool(re.match(r'^[a-zA-Z]+$', word))
+            word_to_check = word.lower() if is_eng else word
+            valid_dict = self.eng_dict if is_eng else self.thai_dict
 
-        return text
+            if word_to_check in valid_dict:
+                stats["correct"] += 1
+                continue
 
+            # 4. Priority 3: ถ้าไม่เจอเลย ให้ถาม Suggestion Engine
+            sug = self.get_suggestions(word, is_eng)
+            if sug and sug[0] != word:
+                stats["incorrect"] += 1
+                stats["wrong_words"].append({
+                    "word": word,
+                    "suggestions": sug[:5],
+                    "source": "engine_suggestion"
+                })
+            else:
+                # ถ้าไม่มีคำแนะนำ ให้ถือว่าอาจเป็นชื่อเฉพาะที่เขียนถูกแล้ว
+                stats["correct"] += 1
 
+        stats["error_percent"] = round((stats["incorrect"] / stats["total"]) * 100, 2) if stats["total"] > 0 else 0
+        return stats
+    
     def build_pattern(self, start, end):
         return rf'{start}\s*(.*?)(?={end}|$)'
-
+    
     def extract_fields(self, text: str) -> dict:
 
         text = self.clean_text(text)
@@ -160,105 +208,19 @@ class SpellChecker:
 
         return results
 
-    def is_english(self, word):
-        return re.match(r'^[a-zA-Z]+$', word) is not None
 
-    def is_symbol(self, word):
-        return re.match(r'^[^a-zA-Z0-9\u0E00-\u0E7F]+$', word) is not None
+    def compare(self, text1: str, text2: str):
+        # 1. ทำความสะอาดและตัดคำทั้งสองชุด
+        # (อย่าลืมใส่ custom_dict=self.custom_segmentation_dict เพื่อความแม่นยำ)
+        tokens1 = deepcut.tokenize(self.clean_text(text1),self.custom_segmentation_dict)
+        tokens2 = deepcut.tokenize(self.clean_text(text2),self.custom_segmentation_dict)
 
-    def check_english(self, word):
-        word_lower = word.lower()
+        # 2. ตรวจสอบคำผิด
+        res1 = self.check_spelling(tokens1)
+        res2 = self.check_spelling(tokens2)
 
-        if word_lower in self.eng_dict:
-            return True, []
-
-        suggestions = difflib.get_close_matches(word_lower, self.eng_dict, n=3, cutoff=0.8)
-
-        if suggestions:
-            return False, suggestions
-
-        return True, []
-
-    def check_spelling(self, word_list):
-        correct = 0
-        incorrect = 0
-        wrong_words = []
-
-        for word in word_list:
-            word = word.strip()
-
-            if not word:
-                continue
-
-            if self.is_symbol(word) or word.isdigit():
-                correct += 1
-                continue
-
-            if word in self.error_dict and self.error_dict[word]["count"] >= self.threshold:
-                incorrect += 1
-                wrong_words.append({
-                    "word": word,
-                    "suggestions": [self.error_dict[word]["correct"]],
-                    "source": "error_dict"
-                })
-                continue
-
-            if self.is_english(word):
-                is_correct, suggestions = self.check_english(word)
-
-                if is_correct:
-                    correct += 1
-                else:
-                    incorrect += 1
-                    wrong_words.append({
-                        "word": word,
-                        "suggestions": suggestions,
-                        "source": "english_spell"
-                    })
-                continue
-
-            if word in self.thai_dict:
-                correct += 1
-                continue
-
-            if word in self.spell_cache:
-                suggestions = self.spell_cache[word]
-            else:
-                suggestions = spell(word, engine="symspell")
-                self.spell_cache[word] = suggestions
-
-            if not suggestions or suggestions[0] == word:
-                correct += 1
-                continue
-
-            incorrect += 1
-            wrong_words.append({
-                "word": word,
-                "suggestions": suggestions[:5],
-                "source": "spell"
-            })
-
-        total = len(word_list)
-        error_percent = (incorrect / total) * 100 if total > 0 else 0
-
-        return {
-            "total": total,
-            "correct": correct,
-            "incorrect": incorrect,
-            "error_percent": round(error_percent, 2),
-            "wrong_words": wrong_words
-        }
-
-    def compare(self, text1, text2):
-        token1 = tokenize(self.clean_text(text1))
-        token2 = tokenize(self.clean_text(text2))
-
-        result1 = self.check_spelling(token1)
-        result2 = self.check_spelling(token2)
-
-        if result1["error_percent"] > result2["error_percent"]:
-            return {"choose": "text2", "result": result2}
-        elif result1["error_percent"] < result2["error_percent"]:
-            return {"choose": "text1", "result": result1}
-        else:
-            return {"choose": "text1", "result": result1}
+        # 3. ตัดสินใจเลือกอันที่ error_percent น้อยกว่า
+        if res1["error_percent"] <= res2["error_percent"]:
+            return text1, res1  # ส่งคืนข้อความชุดที่ 1 และรายงานสรุป
+        else: 
+            return text2, res2  # ส่งคืนข้อความชุดที่ 2 และรายงานสรุป
