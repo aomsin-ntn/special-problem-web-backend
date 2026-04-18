@@ -2,10 +2,9 @@ from authlib.integrations.starlette_client import OAuth
 from starlette.config import Config
 from fastapi import APIRouter, Request, Response, Depends
 from app.database import get_db
-from dotenv import load_dotenv
 import os
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.exc import SQLAlchemyError  # เพิ่ม import สำหรับดักจับ DB Error
+from sqlalchemy.exc import SQLAlchemyError 
 from typing import Annotated
 from app.models.user import User, Role
 from app.models.session import Session
