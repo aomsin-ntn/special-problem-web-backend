@@ -13,6 +13,7 @@ from app.models.project import Project
 from app.models.project_author import ProjectAuthor
 from app.models.project_advisor import ProjectAdvisor
 from app.models.project_keyword import ProjectKeyword
+from app.models.custom_dictionary import CustomDictionary
 from app.models.session import Session as UserSession
 from app.config import settings
 
