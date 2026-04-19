@@ -1,6 +1,9 @@
 # text_services.py
+from deepcut import deepcut
+
 from app.services.spell_services import SpellServices
 from app.services.project_services import ProjectServices
+from app.services.extract_services import ExtractServices
 
 class TextServices:
     def __init__(self):
@@ -8,18 +11,37 @@ class TextServices:
         # เพราะเราต้องการ error_dict จาก DB มา Initialize ใน process
         pass
 
-    async def process(self, ocr_text, pdf_text, db):
-        # 1. ดึงข้อมูลคำผิดจาก Database
+    async def process(self, results, db):
+        # 1. เตรียม Services
         error_dict = await ProjectServices.get_error_dict(db)
         custom_dict = await ProjectServices.get_custom_dict(db)
-        
-        # 2. สร้าง instance พร้อมข้อมูล error_dict
-        # หมายเหตุ: อย่าลืมว่าใน SpellServices เมธอด compare 
-        # ต้องแก้ให้รับแค่ (text1, text2) ตามที่คุยกันรอบก่อน
-        checker = SpellServices(error_dict=error_dict,custom_dict=custom_dict)
-        
-        # 3. ใช้ instance 'checker' (ตัวที่เพิ่งสร้าง) ในการทำงาน
-        best_text, spell_res = checker.compare(ocr_text, pdf_text)
-        fields = checker.extract_fields(best_text)
+        spell_services = SpellServices(error_dict=error_dict, custom_dict=custom_dict)
+        extract_services = ExtractServices()
 
-        return fields, spell_res
+        # 2. รวมข้อความเพื่อ Extract (ยังไม่เช็คคำผิด)
+        # เราใช้ ext_text เป็นหลักเพราะปกติความแม่นยำสูงกว่า OCR ในเชิงโครงสร้าง
+        full_text = " | ".join([res["ext"] if res["ext"] else res["ocr"] for res in results])
+
+        # 3. Extract ข้อมูลออกมาก่อน
+        fields = extract_services.extract_fields(full_text)
+
+        # 4. นำค่าที่ Extract ได้ มาไล่เช็คคำผิดทีละฟิลด์ (เฉพาะ Text fields)
+        report_spell_res = []
+        
+        # รายชื่อฟิลด์ที่ต้องการเช็คคำผิด
+        fields_to_check = ["title_th", "title_en", "abstract_th", "abstract_en", "keywords_th", "keywords_en"]
+
+        for key in fields_to_check:
+            text_val = fields.get(key)
+            if text_val and isinstance(text_val, str):
+                # เช็คคำผิดเฉพาะฟิลด์นั้นๆ
+                tokens = deepcut.tokenize(spell_services.clean_text(text_val), custom_dict)
+                spell_info = spell_services.check_spelling(tokens)
+                
+                if spell_info["incorrect"] > 0:
+                    report_spell_res.append({
+                        "field": key,
+                        "stats": spell_info
+                    })
+
+        return fields, report_spell_res
