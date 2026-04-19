@@ -72,6 +72,36 @@ class ProjectServices:
     async def get_user_by_student_id(db:Session, student_id:str):
         user = await UserRepository.get_user_by_student_id(db,student_id)
         return user
+    
+    @staticmethod
+    async def create_project_keyword(db: Session, project_keyword_data):
+        new_project_keyword = await ProjectRepository.create_project_keyword(db, project_keyword_data)
+        return new_project_keyword
+    
+    @staticmethod
+    async def create_keyword(db: Session, keyword_data):
+        new_keyword = await ProjectRepository.create_keyword(db, keyword_data)
+        return new_keyword
+    
+    @staticmethod
+    async def create_project_advisor(db: Session, project_advisor_data):
+        new_project_advisor = await ProjectRepository.create_project_advisor(db, project_advisor_data)
+        return new_project_advisor
+    
+    @staticmethod
+    async def get_keywords(db: Session):
+        keywords = await ProjectRepository.get_keywords(db)
+        return keywords
+    
+    @staticmethod
+    async def create_project_author(db: Session, project_author_data):
+        new_project_author = await ProjectRepository.create_project_author(db, project_author_data)
+        return new_project_author
+    
+    @staticmethod
+    async def create_project_file(db: Session, project_file_data):
+        new_project_file = await ProjectRepository.create_project_file(db, project_file_data)
+        return new_project_file
 
     @staticmethod
     async def get_project_details(db: Session, project_id: int):
