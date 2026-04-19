@@ -9,7 +9,7 @@ from app.models.degree_department import DegreeDepartment
 
 class UserRepository:
     @staticmethod
-    async def create_user(db: AsyncSession, user: User):
+    async def create_user(db: Session, user: User):
         db.add(user)
         db.commit()
         db.refresh(user)
@@ -36,3 +36,4 @@ class UserRepository:
         ).first()
 
         return result
+    

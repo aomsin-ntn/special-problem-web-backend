@@ -73,7 +73,7 @@ class ProjectRepository:
         return result
     
     @staticmethod
-    async def get_error_dict(db: AsyncSession):
+    async def get_error_dict(db: Session):
         result = db.exec(
             select(IncorrectWord,CorrectionDictionary)
             .join(CorrectionDictionary,IncorrectWord.word_dic_id == CorrectionDictionary.word_dic_id)
@@ -82,49 +82,49 @@ class ProjectRepository:
         return result
     
     @staticmethod
-    async def get_custom_dict(db: AsyncSession):
+    async def get_custom_dict(db: Session):
         result = db.exec(
             select(CustomDictionary)
         ).all()
         return result
 
     @staticmethod
-    async def create_project(db: AsyncSession, project_data: Project):
+    async def create_project(db: Session, project_data: Project):
         db.add(project_data)
         db.commit()
         db.refresh(project_data)
         return project_data
 
     @staticmethod
-    async def create_project_file(db: AsyncSession, project_file: ProjectFile):
+    async def create_project_file(db: Session, project_file: ProjectFile):
         db.add(project_file)
         db.commit()
         db.refresh(project_file)
         return project_file
     
     @staticmethod
-    async def create_project_author(db: AsyncSession, project_author: ProjectAuthor):
+    async def create_project_author(db: Session, project_author: ProjectAuthor):
         db.add(project_author)
         db.commit()
         db.refresh(project_author)
         return project_author
 
     @staticmethod
-    async def create_project_advisor(db: AsyncSession, project_advisor: ProjectAdvisor):
+    async def create_project_advisor(db: Session, project_advisor: ProjectAdvisor):
         db.add(project_advisor)
         db.commit()
         db.refresh(project_advisor)
         return project_advisor
     
     @staticmethod
-    async def create_keyword(db: AsyncSession, keyword: Keyword):
+    async def create_keyword(db: Session, keyword: Keyword):
         db.add(keyword)
         db.commit()
         db.refresh(keyword)
         return keyword
 
     @staticmethod
-    async def create_project_keyword(db: AsyncSession, project_keyword: ProjectKeyword):
+    async def create_project_keyword(db: Session, project_keyword: ProjectKeyword):
         db.add(project_keyword)
         db.commit()
         db.refresh(project_keyword)
