@@ -20,7 +20,7 @@ from app.services.project_services import ProjectServices
 
 # Schemas
 from app.schemas.root_schema import RootResponse, ItemResponse, ItemRequest, GetProjectRequestParams
-from app.schemas.project_schema import ProjectSubmitRequest
+from app.schemas.project_schema import ProjectSaveRequest
 
 # Models
 from app.models.user import User, Role
@@ -169,14 +169,14 @@ async def get_faculty(
 
 @router.post("/save")
 async def save_project(
-    data: ProjectSubmitRequest, 
+    data: ProjectSaveRequest, 
     db: Annotated[Session, Depends(get_db)], 
     current_user: User = Depends(get_current_user),
     service: UploadServices = Depends() # เรียกใช้ Service
 ):
     try:
         # โยนภาระไปให้ Service จัดการให้หมด
-        result = await service.save_project_data(data, db, current_user)
+        result = await service.save_project_data(data.data, data.old_data, db, current_user)
         return result
 
     except SQLAlchemyError as db_error:
@@ -185,6 +185,6 @@ async def save_project(
         raise HTTPException(status_code=500, detail="เกิดข้อผิดพลาดลงฐานข้อมูล")
 
     except Exception as e:
-        await db.rollback()
+        db.rollback()
         print(f"Unexpected Error: {e}")
         raise HTTPException(status_code=500, detail=f"เกิดข้อผิดพลาด: {str(e)}")

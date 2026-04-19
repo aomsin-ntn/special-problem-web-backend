@@ -1,4 +1,4 @@
-from sqlmodel import Session, select,or_
+from sqlmodel import Session, select,or_, and_
 from app.models.project import Project
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.user import User
@@ -148,19 +148,24 @@ class ProjectRepository:
     async def get_projects(db: Session, request: GetProjectRequestParams):
         filters = []
         if request.search:
-            filters.append(
-                or_ (
-                    Project.title_en.ilike(f"%{request.search}%"),
-                    Project.title_th.ilike(f"%{request.search}%"),
-                    User.user_name_th.ilike(f"%{request.search}%"),
-                    User.user_name_en.ilike(f"%{request.search}%"),
-                    User.student_id.ilike(f"%{request.search}%"),
-                    Advisor.advisor_name_th.ilike(f"%{request.search}%"),
-                    Advisor.advisor_name_en.ilike(f"%{request.search}%"),
-                    Keyword.keyword_text_th.ilike(f"%{request.search}%"),
-                    Keyword.keyword_text_en.ilike(f"%{request.search}%")
+            search_terms = request.search.strip().split()
+
+            term_conditions = []
+            for term in search_terms:
+                term_conditions.append(
+                    or_ (
+                        Project.title_en.ilike(f"%{term}%"),
+                        Project.title_th.ilike(f"%{term}%"),
+                        User.user_name_th.ilike(f"%{term}%"),
+                        User.user_name_en.ilike(f"%{term}%"),
+                        User.student_id.ilike(f"%{term}%"),
+                        Advisor.advisor_name_th.ilike(f"%{term}%"),
+                        Advisor.advisor_name_en.ilike(f"%{term}%"),
+                        Keyword.keyword_text_th.ilike(f"%{term}%"),
+                        Keyword.keyword_text_en.ilike(f"%{term}%")
+                    )
                 )
-            )
+            filters.append(and_(*term_conditions))
 
         if request.department:
             filters.append(Department.department_id.in_(request.department))
@@ -341,10 +346,25 @@ class ProjectRepository:
 
     @staticmethod
     async def get_master_degrees(db:Session):
-        degrees = db.exec(
-            select(Degree)      
+        result = db.exec(
+            select(
+                Degree.degree_id, 
+                Degree.degree_name_th, 
+                Degree.degree_name_en, 
+                DegreeDepartment.department_id
+            )
+            .join(DegreeDepartment, Degree.degree_id == DegreeDepartment.degree_id)
         ).all()
-        return degrees
+        
+        return [
+            {
+                "degree_id": row.degree_id,
+                "degree_name_th": row.degree_name_th,
+                "degree_name_en": row.degree_name_en,
+                "department_id": row.department_id
+            }
+            for row in result
+        ]
 
     @staticmethod
     async def get_keywords(db:Session):

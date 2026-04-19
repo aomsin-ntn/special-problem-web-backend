@@ -156,7 +156,7 @@ class UploadServices:
         }
 
     @staticmethod
-    async def save_project_data(data: ProjectSubmitRequest, old_data: ProjectSubmitRequest, db, current_user):
+    async def save_project_data(data: ProjectSubmitRequest, old_data: ProjectSubmitRequest, db, current_user: User):
         comparison_tool = TextComparisonServices()
         fields_to_check = ["title_th", "title_en", "abstract_th", "abstract_en", "keywords_th", "keywords_en"]
         comparison_results = {}

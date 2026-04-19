@@ -43,14 +43,13 @@ class ExtractServices:
         
         # ลบขยะ OCR เบื้องต้น
         text = re.sub(r'[\[\]\{\}\|\\/]', '', text)
+
+        text = re.sub(r'\s+(?:student\s*id|student\s*d|รหัสนักศึกษา|รหัส).*$', '', text, flags=re.IGNORECASE).strip()
         
         if is_title:
             # 1. ลบคำนำหน้าที่เป็นหัวข้อ (ฝั่งไทย)
             text = re.sub(r'^(?:โครงการสหกิจศึกษา|สหกิจศึกษา|โครงการ|เรื่อง|หัวข้อ)[:\s]*', '', text, flags=re.IGNORECASE).strip()
             
-            # 2. ป้องกันกรณีชื่อเรื่องมีคำว่า "นักศึกษา" หรือ "Student" ปนมาท้ายประโยค
-            # จะตัดทิ้งเฉพาะเมื่อคำเหล่านี้อยู่ติดกับรหัสตัวเลข หรืออยู่ท้ายสตริงจริงๆ เท่านั้น
-            text = re.sub(r'\s+(?:student\s*id|student\s*d|รหัสนักศึกษา|รหัส)\s*[:\d].*$', '', text, flags=re.IGNORECASE).strip()
             text = re.sub(r'^[:\s]+', '', text).strip()
 
         cleaned = re.sub(r'\s{2,}', ' ', text).strip()

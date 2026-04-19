@@ -50,3 +50,7 @@ class ProjectSubmitRequest(BaseModel):
     students: List[StudentInput]
     keywords: List[KeywordInput]
     file_info: FileInfoInput
+
+class ProjectSaveRequest(BaseModel): # สร้าง Schema ใหม่คลุมอีกชั้น
+    data: ProjectSubmitRequest
+    old_data: Optional[ProjectSubmitRequest] = None
