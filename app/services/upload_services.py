@@ -378,6 +378,9 @@ class UploadServices:
 
         # --- [ส่วนเดิม: อัปเดต Title, Abstract, Degree ฯลฯ] ---
         project.title_th = data.title_th
+        project.title_en = data.title_en
+        project.abstract_th = data.abstract_th
+        project.abstract_en = data.abstract_en
         # ... (เหมือนโค้ดก่อนหน้านี้) ...
 
         # --- [2. อัปเดต Advisors] ---
