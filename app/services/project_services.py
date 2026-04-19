@@ -29,7 +29,7 @@ class ProjectServices:
         has_permission = await ProjectServices.check_edit_permission(db, project_id, user_id)
         if not has_permission:
             raise HTTPException(status_code=403, detail="คุณไม่มีสิทธิ์ลบข้อมูลนี้")
-        return await ProjectServices.delete_project(db, project_id)
+        return await ProjectRepository.delete_project(db, project_id)
 
     @staticmethod
     async def create_project(db: Session, project_data):

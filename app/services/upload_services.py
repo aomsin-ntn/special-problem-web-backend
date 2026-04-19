@@ -1,3 +1,8 @@
+from http.client import HTTPException
+
+from app.models.advisor import Advisor
+from app.models.correction_dictionary import CorrectionDictionary
+from app.models.incorrect_word import IncorrectWord
 from app.schemas.project_schema import ProjectSubmitRequest
 
 from app.services.file_services import FileServices
@@ -180,6 +185,53 @@ class UploadServices:
             diff_list = comparison_tool.compare_as_list(str(old_val), str(new_val))
             if diff_list:
                 comparison_results[field] = diff_list
+        # --- ต่อจากส่วนเปรียบเทียบข้อมูลที่คุณเขียนไว้ ---
+        if comparison_results:
+            for field, diffs in comparison_results.items():
+                for change in diffs:
+                    # สนใจเฉพาะจุดที่มีการแก้ไข (from และ to ต้องไม่เป็น None)
+                    incorrect = change.get("from")
+                    correct = change.get("to")
+                    
+                    if incorrect and correct:
+                        # 1. ค้นหาใน CorrectionDictionary ว่ามีคำผิดนี้อยู่หรือยัง
+                        existing_dic = await db.query(CorrectionDictionary).filter_by(incorrect_word=incorrect).first()
+                        
+                        if existing_dic:
+                            # ถ้ามีแล้ว ให้บวก Count และเช็คว่าคำที่ถูกนี้อยู่ในลิสต์หรือยัง
+                            existing_dic.count += 1
+                            if existing_dic.correct_word_list is None:
+                                existing_dic.correct_word_list = []
+                            
+                            if correct not in existing_dic.correct_word_list:
+                                existing_dic.correct_word_list.append(correct)
+                            
+                            existing_dic.updated_at = datetime.utcnow()
+                        else:
+                            # ถ้ายังไม่มี ให้สร้าง Entry ใหม่
+                            new_dic = CorrectionDictionary(
+                                incorrect_word=incorrect,
+                                correct_word_list=[correct],
+                                count=1
+                            )
+                            db.add(new_dic)
+                            await db.flush() # เพื่อให้ได้ word_dic_id มาใช้ต่อ
+                            existing_dic = new_dic
+
+                        # 2. บันทึกลงตารางย่อย IncorrectWord เพื่อเก็บสถิติว่าคำนี้ถูกแก้เป็นอะไรบ่อยที่สุด
+                        inc_word_record = await db.query(IncorrectWord).filter_by(
+                            word_dic_id=existing_dic.word_dic_id, 
+                            correct_word=correct
+                        ).first()
+
+                        if inc_word_record:
+                            inc_word_record.count += 1
+                        else:
+                            db.add(IncorrectWord(
+                                word_dic_id=existing_dic.word_dic_id,
+                                correct_word=correct,
+                                count=1
+                            ))
 
         try:
             # 1. สั่งระงับ Autoflush ตลอดการทำงานในบล็อกนี้ ป้องกันระบบแทรกคิว
@@ -316,3 +368,55 @@ class UploadServices:
             # คุณสามารถเพิ่มการลบไฟล์ที่เพิ่งอัพโหลดทิ้งที่นี่ได้ (Optional)
             print(f"Transaction failed: {str(e)}")
             raise e
+        
+    @staticmethod
+    async def save_update_project_data(project_id: str, data: ProjectSubmitRequest, db, current_user):
+        # 1. ดึงโปรเจกต์เดิมมา (พร้อมโหลดความสัมพันธ์เดิมมาด้วย)
+        project = await ProjectServices.get_project_details(db, project_id)
+        if not project:
+            raise HTTPException(status_code=404, detail="ไม่พบโปรเจกต์นี้")
+
+        # --- [ส่วนเดิม: อัปเดต Title, Abstract, Degree ฯลฯ] ---
+        project.title_th = data.title_th
+        # ... (เหมือนโค้ดก่อนหน้านี้) ...
+
+        # --- [2. อัปเดต Advisors] ---
+        # ลบความสัมพันธ์เดิมออกก่อน
+        project.advisors = [] 
+        # วนลูปเพิ่ม Advisor ใหม่จากก้อน JSON
+        for adv in data.advisors:
+            if adv.advisor_id:
+                # สร้างความสัมพันธ์ใหม่ (ขึ้นอยู่กับ ORM ที่ใช้ เช่น SQLAlchemy)
+                # เราจะ Map ค่า advisor_id เข้าไปในตาราง Mapping
+                new_advisor = await db.query(Advisor).get(adv.advisor_id)
+                if new_advisor:
+                    project.advisors.append(new_advisor)
+        
+        # --- [3. อัปเดต Keywords] ---
+        # ลบ Keyword เดิมที่เชื่อมกับโปรเจกต์นี้ออก
+        project.keywords = []
+        for kw in data.keywords:
+            # กรณีที่ Keyword มีอยู่แล้วในระบบ (ใช้วิธีหาจาก Text หรือ ID)
+            existing_kw = await db.query(Keyword).filter_by(keyword_text_th=kw.keyword_text_th).first()
+            
+            if existing_kw:
+                project.keywords.append(existing_kw)
+            else:
+                # ถ้าเป็น Keyword ใหม่ที่ OCR เพิ่งอ่านเจอและยังไม่มีใน DB ให้สร้างใหม่
+                new_kw = Keyword(
+                    keyword_text_th=kw.keyword_text_th,
+                    keyword_text_en=kw.keyword_text_en
+                )
+                db.add(new_kw)
+                project.keywords.append(new_kw)
+
+        # 4. บันทึกทุกอย่างลง Database
+        try:
+            await db.commit()
+            await db.refresh(project)
+        except Exception as e:
+            await db.rollback()
+            print(f"Update Error: {e}")
+            raise HTTPException(status_code=500, detail="ไม่สามารถอัปเดตข้อมูลกลุ่มสัมพันธ์ได้")
+
+        return project
