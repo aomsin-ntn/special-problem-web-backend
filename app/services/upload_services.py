@@ -1,5 +1,3 @@
-from openai import project
-
 from app.schemas.project_schema import ProjectSubmitRequest
 
 from app.services.file_services import FileServices
@@ -184,8 +182,8 @@ class UploadServices:
                 comparison_results[field] = diff_list
 
         try:
-            # --- เริ่ม Transaction (Atomic: สำเร็จทั้งหมดหรือพังทั้งหมด) ---
-            async with db.begin():
+            # 1. สั่งระงับ Autoflush ตลอดการทำงานในบล็อกนี้ ป้องกันระบบแทรกคิว
+            with db.no_autoflush:
                 
                 # --- 1. จัดการ Metadata IDs (Faculty, Dept, Degree) ---
                 async def get_id(input_data, master_func, th_attr, en_attr, id_attr):
@@ -212,6 +210,7 @@ class UploadServices:
                     uploaded_at=datetime.utcnow()
                 )
                 db.add(project_file)
+                db.flush()
 
                 # --- 3. บันทึกโปรเจกต์ (Project) ---
                 project = Project(
@@ -231,6 +230,7 @@ class UploadServices:
                     edit_logs=comparison_results # บันทึกผลการเทียบ OCR ไว้ในตาราง Project เลย (ถ้ามี field)
                 )
                 db.add(project)
+                db.flush()
 
                 # --- 4. บันทึกนักศึกษา (ProjectAuthor) ---
                 for idx, s in enumerate(data.students, start=1):
@@ -248,6 +248,7 @@ class UploadServices:
                             email=f"{s.student_id}@kmitl.ac.th"
                         )
                         db.add(user)
+                        db.flush()
                     
                     # ผูกความสัมพันธ์ Author
                     db.add(ProjectAuthor(
@@ -267,6 +268,8 @@ class UploadServices:
 
                 # --- 6. บันทึกคำสำคัญ (Keyword & ProjectKeyword) ---
                 db_keywords = await ProjectServices.get_keywords(db)
+                used_keyword_ids = set()
+
                 for idx, kw in enumerate(data.keywords, start=1):
                     target_kw_id = None
                     
@@ -289,16 +292,21 @@ class UploadServices:
                                 keyword_text_en=kw.keyword_text_en
                             )
                             db.add(new_kw)
+                            db.flush()
+
                             target_kw_id = new_kw.keyword_id
                             db_keywords.append(new_kw) # ป้องกันคำซ้ำใน loop เดียวกัน
 
                     # บันทึกความสัมพันธ์ Keyword
-                    if target_kw_id:
+                    if target_kw_id and target_kw_id not in used_keyword_ids:
                         db.add(ProjectKeyword(
                             project_id=project.project_id, 
                             keyword_id=target_kw_id, 
                             keyword_order=idx
                         ))
+                        used_keyword_ids.add(target_kw_id)
+
+            db.commit()
 
             # เมื่อจบ block async with db.begin() ระบบจะ Commit ให้อัตโนมัติ
             return {"status": "success", "project_id": str(project.project_id)}

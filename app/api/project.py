@@ -180,7 +180,7 @@ async def save_project(
         return result
 
     except SQLAlchemyError as db_error:
-        await db.rollback() 
+        db.rollback() 
         print(f"Database Error: {db_error}")
         raise HTTPException(status_code=500, detail="เกิดข้อผิดพลาดลงฐานข้อมูล")
 
