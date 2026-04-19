@@ -8,6 +8,7 @@ class StudentInput(BaseModel):
     student_name_en: str
 
 class KeywordInput(BaseModel):
+    keyword_id: Optional[UUID] = None
     keyword_text_th: str
     keyword_text_en: str
 
