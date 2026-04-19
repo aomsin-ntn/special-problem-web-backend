@@ -20,7 +20,7 @@ from app.services.project_services import ProjectServices
 
 # Schemas
 from app.schemas.root_schema import RootResponse, ItemResponse, ItemRequest, GetProjectRequestParams
-from app.schemas.project_schema import ProjectSaveRequest
+from app.schemas.project_schema import ProjectSaveRequest, ProjectSubmitRequest
 
 # Models
 from app.models.user import User, Role
@@ -211,3 +211,25 @@ async def get_project_details_check_permission(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, 
             detail="เกิดข้อผิดพลาดในการดึงข้อมูลจากฐานข้อมูล"
         )
+    
+@router.post("/save_update_project_data/{project_id}")
+async def save_update_project(
+    data: ProjectSubmitRequest, 
+    db: Annotated[Session, Depends(get_db)], 
+    current_user: User = Depends(get_current_user),
+    service: UploadServices = Depends() # เรียกใช้ Service
+):
+    try:
+        # โยนภาระไปให้ Service จัดการให้หมด
+        result = await service.save_update_project_data(data.data, db, current_user)
+        return result
+
+    except SQLAlchemyError as db_error:
+        db.rollback() 
+        print(f"Database Error: {db_error}")
+        raise HTTPException(status_code=500, detail="เกิดข้อผิดพลาดลงฐานข้อมูล")
+
+    except Exception as e:
+        db.rollback()
+        print(f"Unexpected Error: {e}")
+        raise HTTPException(status_code=500, detail=f"เกิดข้อผิดพลาด: {str(e)}")
