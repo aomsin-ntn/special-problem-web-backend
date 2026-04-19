@@ -1,23 +1,13 @@
 import re
 import difflib
 import deepcut
+
 from pythainlp.spell import spell
 from pythainlp.corpus.common import thai_words
+
 from wordfreq import top_n_list
-from app.services.project_services import ProjectServices
 
 class SpellServices:
-
-    TITLE_KEYS = r'(?:หัวข้อ(?:ปัญหาพิเศษ|สหกิจศึกษา|โครงงานพิเศษ)|Title:?|title:?)'
-    STUDENT_KEYS = r'(?:ชื่อนักศึกษา|ชื่อผู้จัดทำ|Student Name|By:?|ผู้จัดทำ|student id?\s+(?:mr|miss|mrs)\b|students?(?=\s*(?:mr\.?|miss\.?|mrs\.?|นาย|นางสาว|นาง)))'
-    DEGREE_KEYS = r'(?:ปริญญา|Degree)'
-    DEPARTMENT_KEYS = r'(?:ภาควิชา|Department)'
-    FACULTY_KEYS = r'(?:คณะ|Faculty|School)'
-    UNIVERSITY_KEYS = r'(?:มหาวิทยาลัย|University)'
-    ACADEMIC_YEAR_KEYS = r'(?:ปีการศึกษา|Academic\s*Year:?|AcademicYear)'
-    ADVISOR_KEYS = r'(?:อาจารย์ที่ปรึกษา|Advisor)'
-    ABSTRACT_KEYS = r'(?:บทคัดย่อ|Abstract)'
-    KEYWORDS_KEYS = r'(?:คำสำคัญ:?|Keywords:?)'
 
     def __init__(self, error_dict=None, custom_dict=None):
         self.spell_cache = {}
@@ -95,118 +85,6 @@ class SpellServices:
 
         stats["error_percent"] = round((stats["incorrect"] / stats["total"]) * 100, 2) if stats["total"] > 0 else 0
         return stats
-    
-    def build_pattern(self, start, end):
-        return rf'{start}\s*(.*?)(?={end}|$)'
-    
-    def extract_fields(self, text: str) -> dict:
-
-        text = self.clean_text(text)
-
-        patterns = {
-            'Title': rf'{self.TITLE_KEYS}\s*(.*?)(?={self.STUDENT_KEYS}|$)',
-            'Degree': self.build_pattern(self.DEGREE_KEYS, self.DEPARTMENT_KEYS),
-            'Department': self.build_pattern(self.DEPARTMENT_KEYS, self.FACULTY_KEYS),
-            'Faculty': self.build_pattern(self.FACULTY_KEYS, self.UNIVERSITY_KEYS),
-            'University': self.build_pattern(self.UNIVERSITY_KEYS, self.ACADEMIC_YEAR_KEYS),
-            'AcademicYear': self.build_pattern(self.ACADEMIC_YEAR_KEYS, self.ADVISOR_KEYS),
-            'Advisor': self.build_pattern(self.ADVISOR_KEYS, self.ABSTRACT_KEYS),
-            'Abstract': self.build_pattern(self.ABSTRACT_KEYS, self.KEYWORDS_KEYS),
-            'Keywords': rf'{self.KEYWORDS_KEYS}\s*(.*)',
-        }
-
-        results = {}
-
-        for key, pat in patterns.items():
-            m = re.search(pat, text, flags=re.DOTALL | re.IGNORECASE)
-            if m:
-                results[key] = m.group(1).strip()
-
-        name_block = None
-        
-        # ใช้ STUDENT_KEYS เพื่อหาจุดเริ่มต้นที่แม่นยำขึ้น
-        m = re.search(
-            rf'(?:{self.STUDENT_KEYS})(.*?)(?=\s*(?:ปริญญา|degree))',
-            text,
-            flags=re.DOTALL | re.IGNORECASE
-        )
-
-        if m:
-            name_block = m.group(1).strip()
-            # ลบส่วนที่เคยชดเชย match_prefix ของเดิมทิ้งไป เพื่อไม่ให้ชื่อเบิ้ล
-
-        students = []
-
-        if name_block:
-            matches = re.findall(
-                r'((?:mr\.?|miss\.?|mrs\.?|นาย|นางสาว|นาง)?\s*[a-zA-Z\u0E00-\u0E7F\s\.\-]+?)\s*(?:รหัสนักศึกษา|student id|id)?\s*(\d{6,})',
-                name_block,
-                flags=re.IGNORECASE
-            )
-
-            for name, sid in matches:
-                name_clean = name.strip()
-
-                # 1. ลบคำขยะ (students/ชื่อนักศึกษา) ที่อาจคั่นอยู่หน้าชื่อคนที่ 2
-                name_clean = re.sub(r'^(?:students?|ชื่อนักศึกษา)\s*', '', name_clean, flags=re.IGNORECASE).strip()
-                
-                # 2. ป้องกันคำนำหน้าซ้ำซ้อน (เช่น "นางสาว นางสาว" หรือ "miss miss")
-                name_clean = re.sub(r'^(mr\.?|miss\.?|mrs\.?|นาย|นางสาว|นาง)\s*\1', r'\1', name_clean, flags=re.IGNORECASE).strip()
-
-                if not name_clean:
-                    continue
-
-                students.append({
-                    "name": name_clean,
-                    "id": sid.strip() if sid else None
-                })
-
-            # 🔥 fallback ถ้าไม่เจออะไรเลย
-            if not students and name_block:
-                students.append({
-                    "name": name_block.strip(),
-                    "id": None
-                })
-
-        if students:
-            results['Students'] = students
-
-        for k, v in results.items():
-            if isinstance(v, str):
-
-                v = v.replace("\n", " ")
-                v = re.sub(r'\.{2,}', '', v)
-                v = v.lstrip(': ').strip()
-                v = re.sub(r'\s+', ' ', v)
-
-                results[k] = v.strip()
-
-        if 'Title' not in results:
-            m = re.search(r'^(.*?)(?=ชื่อนักศึกษา)', text)
-            if m:
-                results['Title'] = m.group(1).strip()
-
-        # fix University
-        if 'University' in results:
-            uni = results['University']
-            uni = re.sub(r'(University)\s*\1+', r'\1', uni, flags=re.IGNORECASE)
-            uni = re.sub(r'\s+', ' ', uni)
-            results['University'] = uni.strip()
-
-        if 'Keywords' in results and isinstance(results['Keywords'], str):
-            keywords_text = results['Keywords']
-            # ตรวจสอบว่ามีเครื่องหมายจุลภาค (,) หรือไม่
-            if ',' in keywords_text:
-                # แยกคำด้วยเครื่องหมาย , แล้วตัดช่องว่างหน้า-หลังของแต่ละคำออก
-                keywords_list = [kw.strip() for kw in keywords_text.split(',')]
-            else:
-                # แยกคำด้วยเว้นวรรค
-                keywords_list = [kw.strip() for kw in keywords_text.split()]
-            
-            # กรองเอาเฉพาะคำที่ไม่ใช่ค่าว่าง
-            results['Keywords'] = [kw for kw in keywords_list if kw]
-
-        return results
 
 
     def compare(self, text1: str, text2: str):
