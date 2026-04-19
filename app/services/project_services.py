@@ -170,3 +170,7 @@ class ProjectServices:
 
         return None
     
+    @staticmethod
+    async def check_edit_permission(db: Session, project_id: UUID, user_id: UUID) -> bool:
+        is_owner = await ProjectRepository.is_project_owner(db, project_id, user_id)
+        return is_owner
