@@ -99,6 +99,7 @@ class SpellServices:
 
         # 3. ตัดสินใจเลือกอันที่ error_percent น้อยกว่า
         if res1["error_percent"] <= res2["error_percent"]:
+            
             return text1, res1  # ส่งคืนข้อความชุดที่ 1 และรายงานสรุป
         else: 
             return text2, res2  # ส่งคืนข้อความชุดที่ 2 และรายงานสรุป

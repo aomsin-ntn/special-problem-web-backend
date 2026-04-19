@@ -25,11 +25,11 @@ class ProjectServices:
         return custom_dict
 
     @staticmethod
-    async def delete_project(db: Session, project_id: int):
-        project = await ProjectRepository.delete_project(db, project_id)
-        if project:
-            return True
-        return False
+    async def delete_project(db: Session, project_id: int, user_id: UUID):
+        has_permission = await ProjectServices.check_edit_permission(db, project_id, user_id)
+        if not has_permission:
+            raise HTTPException(status_code=403, detail="คุณไม่มีสิทธิ์ลบข้อมูลนี้")
+        return await ProjectServices.delete_project(db, project_id)
 
     @staticmethod
     async def create_project(db: Session, project_data):
@@ -204,3 +204,10 @@ class ProjectServices:
     async def check_edit_permission(db: Session, project_id: UUID, user_id: UUID) -> bool:
         is_owner = await ProjectRepository.is_project_owner(db, project_id, user_id)
         return is_owner
+
+    @staticmethod
+    async def get_project_details_check_permission(db: Session, project_id: int, user_id: UUID):
+        has_permission = await ProjectServices.check_edit_permission(db, project_id, user_id)
+        if not has_permission:
+            raise HTTPException(status_code=403, detail="คุณไม่มีสิทธิ์เข้าถึงข้อมูลนี้")
+        return await ProjectServices.get_project_details(db, project_id)
