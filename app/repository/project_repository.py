@@ -121,6 +121,14 @@ class ProjectRepository:
         db.commit()
         db.refresh(project_keyword)
         return project_keyword
+    
+    @staticmethod
+    async def is_project_owner(db: Session, project_id: UUID, user_id: UUID) -> bool:
+        owner = db.exec(
+            select(ProjectAuthor)
+            .where(ProjectAuthor.project_id == project_id, ProjectAuthor.user_id == user_id)
+        ).first()
+        return owner is not None
 
     @staticmethod
     async def delete_project(db: Session, project_id: UUID):
