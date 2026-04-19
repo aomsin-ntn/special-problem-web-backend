@@ -44,6 +44,14 @@ class ProjectRepository:
         ).all()
 
         return result
+    
+    @staticmethod
+    async def get_keyword_suggestions(db: Session):
+        result = db.exec(
+            select(Keyword)
+            .limit(10)
+        ).all()
+        return result
 
     @staticmethod
     async def get_project_details(db: Session, project_id: UUID):
