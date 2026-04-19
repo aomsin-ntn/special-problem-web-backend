@@ -1,3 +1,5 @@
+from openai import project
+
 from app.schemas.project_schema import ProjectSubmitRequest
 
 from app.services.file_services import FileServices
@@ -5,11 +7,9 @@ from app.services.ocr_services import OCRServices
 from app.services.text_services import TextServices
 from app.services.project_services import ProjectServices
 from app.services.textcomparison_services import TextComparisonServices
+from app.services.user_services import UserServices
 
 from app.config import settings
-
-from app.repository.user_repository import UserRepository
-from app.repository.project_repository import ProjectRepository
 
 from app.models.user import User, Role
 from app.models.project_file import ProjectFile
@@ -55,10 +55,11 @@ class UploadServices:
         fields, spell_res = await self.text_services.process(raw_ocr_results, db)
         
         # get Master Data
-        degrees = await ProjectRepository.get_master_degrees(db)
-        advisors = await ProjectRepository.get_master_advisors(db)
-        departments = await ProjectRepository.get_master_departments(db)
-        faculties = await ProjectRepository.get_master_faculties(db)
+        degrees = await ProjectServices.get_master_degrees(db)
+        advisors = await ProjectServices.get_master_advisors(db)
+        departments = await ProjectServices.get_master_departments(db)
+        faculties = await ProjectServices.get_master_faculties(db)
+        keywords = await ProjectServices.get_keywords(db)
         
         # Matching Metadata (Degree, Dept, Faculty)
         metadata_mappings = [
@@ -93,17 +94,22 @@ class UploadServices:
             })
 
         # จัดเตรียมข้อมูล Keyword ส่งให้หน้าบ้าน
+        # จัดเตรียมข้อมูล Keyword ส่งให้หน้าบ้าน (แบบจับคู่ลำดับอย่างเดียว)
         keywords_th = fields.get("keywords_th", [])
         keywords_en = fields.get("keywords_en", [])
         extracted_keywords = []
 
-        # ใช้ zip_longest เพื่อจับคู่คำต่อคำ ถ้าฝั่งไหนน้อยกว่าจะเติม "" (ตามที่คุณเขียน)
+        # ใช้ zip_longest เพื่อจับคู่คำต่อคำตามลำดับที่เจอ
+        # ถ้าไทยมี 3 คำ อังกฤษมี 5 คำ คำที่เกินมาของไทยจะเป็น ""
         for kw_th, kw_en in zip_longest(keywords_th, keywords_en, fillvalue=""):
-            if kw_th or kw_en:
-                extracted_keywords.append({
-                    "keyword_text_th": kw_th if kw_th else None,
-                    "keyword_text_en": kw_en if kw_en else None
-                })
+            extracted_keywords.append({
+                "keyword_id": None,             # ส่งเป็น None ไปก่อนเพื่อให้หน้าบ้านจัดการ
+                "keyword_text_th": kw_th.strip(),
+                "keyword_text_en": kw_en.strip()
+            })
+
+        # แทนที่ค่าเดิมใน fields ด้วย List ของคู่คำ
+        fields["keywords"] = extracted_keywords
 
         # จัดเตรียมข้อมูล Student ส่งให้หน้าบ้าน
         students_data = fields.get("students", []) # คีย์ควรเป็นตัวเล็กตามที่เขียนใน ExtractServices
@@ -157,117 +163,148 @@ class UploadServices:
 
     @staticmethod
     async def save_project_data(data: ProjectSubmitRequest, old_data: ProjectSubmitRequest, db, current_user):
+        """
+        บันทึกข้อมูลโปรเจกต์ทั้งหมดลงฐานข้อมูล (Atomic Operation)
+        """
         comparison_tool = TextComparisonServices()
-        fields_to_check = ["title_th", "title_en", "abstract_th", "abstract_en", "keywords_th", "keywords_en"]
+        fields_to_check = ["title_th", "title_en", "abstract_th", "abstract_en", "academic_year"]
         comparison_results = {}
 
+        # --- 0. เปรียบเทียบข้อมูลเพื่อเก็บ Log (OCR vs User Edit) ---
         for field in fields_to_check:
-            # ดึงข้อมูลจากก้อนเก่า (OCR/Extract เดิม) และก้อนใหม่ (ที่ User แก้ไข)
-            # หมายเหตุ: .get(field) ใช้ได้ทั้งกับ dict หรือถ้าเป็น object ให้ใช้ getattr(obj, field)
             old_val = getattr(old_data, field) if hasattr(old_data, field) else ""
             new_val = getattr(data, field) if hasattr(data, field) else ""
 
-            # กรณีที่เป็น Keywords (ซึ่งเป็น List) ให้แปลงเป็น String ก่อนเปรียบเทียบ
-            if isinstance(old_val, list):
-                old_val = ", ".join(filter(None, old_val))
-            if isinstance(new_val, list):
-                new_val = ", ".join(filter(None, new_val))
+            # กรณี Keywords (หากถูกส่งมาเป็น list)
+            if isinstance(old_val, list): old_val = ", ".join(filter(None, old_val))
+            if isinstance(new_val, list): new_val = ", ".join(filter(None, new_val))
 
-            # เรียกใช้เครื่องมือเปรียบเทียบ
-            diff_list = comparison_tool.compare_as_list(old_val, new_val)
-            
-            # เก็บเฉพาะฟิลด์ที่มีความแตกต่าง (มี error_list ไม่เป็นค่าว่าง)
+            diff_list = comparison_tool.compare_as_list(str(old_val), str(new_val))
             if diff_list:
                 comparison_results[field] = diff_list
-        # 1. จัดการ Metadata (ใช้ ID ถ้ามี ถ้าไม่มีให้ลอง Match ใหม่)
-        async def get_id(input_data, master_func, th_attr, en_attr, id_attr):
-            target_id = getattr(input_data, id_attr)
-            if not target_id:
-                master_items = await master_func(db)
-                match = ProjectServices.find_match(
-                    getattr(input_data, th_attr), 
-                    getattr(input_data, en_attr), 
-                    master_items, th_attr, en_attr
+
+        try:
+            # --- เริ่ม Transaction (Atomic: สำเร็จทั้งหมดหรือพังทั้งหมด) ---
+            async with db.begin():
+                
+                # --- 1. จัดการ Metadata IDs (Faculty, Dept, Degree) ---
+                async def get_id(input_data, master_func, th_attr, en_attr, id_attr):
+                    if not input_data: return None
+                    target_id = getattr(input_data, id_attr, None)
+                    if not target_id:
+                        master_items = await master_func(db)
+                        match = ProjectServices.find_match(
+                            getattr(input_data, th_attr, ""), 
+                            getattr(input_data, en_attr, ""), 
+                            master_items, th_attr, en_attr
+                        )
+                        return getattr(match, id_attr) if match else None
+                    return target_id
+                
+                actual_degree_id = await get_id(data.degree, ProjectServices.get_master_degrees, "degree_name_th", "degree_name_en", "degree_id")
+
+                # --- 2. บันทึกไฟล์ (ProjectFile) ---
+                project_file = ProjectFile(
+                    file_id=uuid4(),
+                    file_name=data.file_info.save_name,
+                    file_path=data.file_info.file_path,
+                    thumbnail_path=data.file_info.thumbnail_path, 
+                    uploaded_at=datetime.utcnow()
                 )
-                return getattr(match, id_attr) if match else None
-            return target_id
+                db.add(project_file)
 
-        actual_faculty_id = await get_id(data.faculty, ProjectRepository.get_master_faculties, "faculty_name_th", "faculty_name_en", "faculty_id")
-        actual_dept_id = await get_id(data.department, ProjectRepository.get_master_departments, "department_name_th", "department_name_en", "department_id")
-        actual_degree_id = await get_id(data.degree, ProjectRepository.get_master_degrees, "degree_name_th", "degree_name_en", "degree_id")
-
-        # 2. บันทึกไฟล์
-        project_file = ProjectFile(
-            file_id=uuid4(),
-            file_name=data.file_info.save_name,
-            file_path=data.file_info.file_path,
-            thumbnail_path=data.file_info.thumbnail_path, 
-            uploaded_at=datetime.utcnow()
-        )
-        await ProjectRepository.create_project_file(db, project_file)
-
-        # 3. บันทึกโปรเจกต์
-        project = Project(
-            project_id=uuid4(),
-            title_th=data.title_th,
-            title_en=data.title_en,
-            abstract_th=data.abstract_th,
-            abstract_en=data.abstract_en,
-            academic_year=data.academic_year,
-            degree_id=actual_degree_id,
-            # faculty_id=actual_faculty_id, # ใส่ตามโครงสร้าง Table ของคุณ
-            # department_id=actual_dept_id,
-            created_by=current_user.user_id,
-            is_active=True,
-            file_id=project_file.file_id,
-            download_count=0
-        )
-        await ProjectRepository.create_project(db, project)
-
-        # 4. บันทึกนักศึกษา (Author)
-        for idx, s in enumerate(data.students, start=1):
-            if not s.student_id: continue
-            user = await ProjectServices.get_user_by_student_id(db, s.student_id)
-            if not user:
-                user = User(
-                    user_id=uuid4(),
-                    student_id=s.student_id,
-                    user_name_th=s.student_name_th,
-                    user_name_en=s.student_name_en,
+                # --- 3. บันทึกโปรเจกต์ (Project) ---
+                project = Project(
+                    project_id=uuid4(),
+                    title_th=data.title_th,
+                    title_en=data.title_en,
+                    abstract_th=data.abstract_th,
+                    abstract_en=data.abstract_en,
+                    academic_year=data.academic_year,
                     degree_id=actual_degree_id,
-                    role=Role.STUDENT,
-                    email=f"{s.student_id}@kmitl.ac.th"
+                    # faculty_id=actual_faculty_id, # ใส่ตามชื่อ field ใน Model ของคุณ
+                    # department_id=actual_dept_id,
+                    created_by=current_user.user_id,
+                    is_active=True,
+                    file_id=project_file.file_id,
+                    download_count=0,
+                    edit_logs=comparison_results # บันทึกผลการเทียบ OCR ไว้ในตาราง Project เลย (ถ้ามี field)
                 )
-                await UserRepository.create_user(db, user)
-            
-            await ProjectRepository.create_project_author(db, ProjectAuthor(
-                project_id=project.project_id, user_id=user.user_id, author_order=idx
-            ))
+                db.add(project)
 
-        # 5. บันทึกอาจารย์ (Advisor)
-        for idx, adv in enumerate(data.advisors, start=1):
-            if adv.advisor_id:
-                await ProjectRepository.create_project_advisor(db, ProjectAdvisor(
-                    project_id=project.project_id, advisor_id=adv.advisor_id, advisor_order=idx
-                ))
+                # --- 4. บันทึกนักศึกษา (ProjectAuthor) ---
+                for idx, s in enumerate(data.students, start=1):
+                    if not s.student_id: continue
+                    # ตรวจสอบว่ามี User นี้ในระบบหรือยัง
+                    user = await ProjectServices.get_user_by_student_id(db, s.student_id)
+                    if not user:
+                        user = User(
+                            user_id=uuid4(),
+                            student_id=s.student_id,
+                            user_name_th=s.student_name_th,
+                            user_name_en=s.student_name_en,
+                            degree_id=actual_degree_id,
+                            role=Role.STUDENT,
+                            email=f"{s.student_id}@kmitl.ac.th"
+                        )
+                        db.add(user)
+                    
+                    # ผูกความสัมพันธ์ Author
+                    db.add(ProjectAuthor(
+                        project_id=project.project_id, 
+                        user_id=user.user_id, 
+                        author_order=idx
+                    ))
 
-        # 6. บันทึกคำสำคัญ (Keyword)
-        db_keywords = await ProjectRepository.get_keywords(db)
-        for idx, kw in enumerate(data.keywords, start=1):
-            match = ProjectServices.find_match(
-                kw.keyword_text_th, kw.keyword_text_en, db_keywords, "keyword_text_th", "keyword_text_en"
-            )
-            target_kw = match
-            if not target_kw:
-                target_kw = Keyword(
-                    keyword_id=uuid4(),
-                    keyword_text_th=kw.keyword_text_th,
-                    keyword_text_en=kw.keyword_text_en
-                )
-                await ProjectRepository.create_keyword(db, target_kw)
+                # --- 5. บันทึกอาจารย์ (ProjectAdvisor) ---
+                for idx, adv in enumerate(data.advisors, start=1):
+                    if adv.advisor_id:
+                        db.add(ProjectAdvisor(
+                            project_id=project.project_id, 
+                            advisor_id=adv.advisor_id, 
+                            advisor_order=idx
+                        ))
 
-            await ProjectRepository.create_project_keyword(db, ProjectKeyword(
-                project_id=project.project_id, keyword_id=target_kw.keyword_id, keyword_order=idx
-            ))
+                # --- 6. บันทึกคำสำคัญ (Keyword & ProjectKeyword) ---
+                db_keywords = await ProjectServices.get_keywords(db)
+                for idx, kw in enumerate(data.keywords, start=1):
+                    target_kw_id = None
+                    
+                    # เช็ค ID ก่อน
+                    if hasattr(kw, 'keyword_id') and kw.keyword_id:
+                        target_kw_id = kw.keyword_id
+                    else:
+                        # ถ้าไม่มี ID ให้หาจาก Text Match
+                        match = ProjectServices.find_match(
+                            kw.keyword_text_th, kw.keyword_text_en, 
+                            db_keywords, "keyword_text_th", "keyword_text_en"
+                        )
+                        if match:
+                            target_kw_id = match.keyword_id
+                        else:
+                            # ถ้าไม่เจอจริงๆ ให้สร้างใหม่
+                            new_kw = Keyword(
+                                keyword_id=uuid4(),
+                                keyword_text_th=kw.keyword_text_th,
+                                keyword_text_en=kw.keyword_text_en
+                            )
+                            db.add(new_kw)
+                            target_kw_id = new_kw.keyword_id
+                            db_keywords.append(new_kw) # ป้องกันคำซ้ำใน loop เดียวกัน
 
-        return {"status": "success", "project_id": project.project_id}
+                    # บันทึกความสัมพันธ์ Keyword
+                    if target_kw_id:
+                        db.add(ProjectKeyword(
+                            project_id=project.project_id, 
+                            keyword_id=target_kw_id, 
+                            keyword_order=idx
+                        ))
+
+            # เมื่อจบ block async with db.begin() ระบบจะ Commit ให้อัตโนมัติ
+            return {"status": "success", "project_id": str(project.project_id)}
+
+        except Exception as e:
+            # หากเกิด Error อะไรก็ตาม ระบบจะ Rollback อัตโนมัติ
+            # คุณสามารถเพิ่มการลบไฟล์ที่เพิ่งอัพโหลดทิ้งที่นี่ได้ (Optional)
+            print(f"Transaction failed: {str(e)}")
+            raise e

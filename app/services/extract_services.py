@@ -106,59 +106,67 @@ class ExtractServices:
 
     @staticmethod
     def extract_fields(text: str):
-        # 1. ดึงข้อมูลส่วนที่ใช้ Logic เฉพาะ (Student และ Advisor)
         results = {
             "students": ExtractServices.extract_students(text),
             "advisors": ExtractServices.extract_advisors(text)
         }
         
-        # 2. รวม Pattern ทั้งหมด (TH และ EN) เพื่อวนลูปดึงข้อมูลฟิลด์ทั่วไป
         all_patterns = {**ExtractServices.TH_PATTERNS, **ExtractServices.EN_PATTERNS}
         
         for field, pattern in all_patterns.items():
-            # ข้ามฟิลด์ที่จัดการไปแล้วในข้อ 1
             if "student" in field or "advisor" in field: 
                 continue
             
-            # ใช้ Regex ค้นหาข้อมูลตาม Pattern
             match = re.search(pattern, text, re.IGNORECASE | re.UNICODE | re.DOTALL)
             
             if match:
                 try:
+                    # ดึงค่าออกมาและจัดการเรื่องการขึ้นบรรทัดใหม่ที่ค้างคา
                     val = match.group(1).strip()
                     
-                    # --- ส่วนจัดการ Keyword (รองรับ , ; \n และ เว้นวรรค) ---
                     if "keywords" in field:
-                        # แยกด้วยสัญลักษณ์มาตรฐานก่อน
-                        raw_items = re.split(r'[,;\n]', val)
+                        # 1. จัดการเรื่องการขึ้นบรรทัดใหม่ที่อาจตัดกลางคำ
+                        # แทนที่การขึ้นบรรทัดใหม่ด้วยช่องว่างชั่วคราว เพื่อให้ประโยคต่อเนื่องกัน
+                        val_cleaned = re.sub(r'\n', ' ', val)
+                        
+                        # 2. แยกด้วยเครื่องหมายคั่นมาตรฐานก่อน
+                        raw_items = re.split(r'[,;]', val_cleaned)
                         
                         final_keywords = []
                         for item in raw_items:
-                            # ถ้าก้อนที่แยกออกมา มีเว้นวรรคภายใน (กรณีภาษาไทยใช้เว้นวรรคแทนคอมม่า)
-                            # เราจะเช็คว่าเป็นภาษาไทยที่มีเว้นวรรคหรือไม่
-                            # \u0E00-\u0E7F คือช่วงตัวอักษรไทย
-                            if re.search(r'[\u0E00-\u0E7F]', item) and ' ' in item.strip():
-                                # แยกย่อยด้วยเว้นวรรค (ตั้งแต่ 1 ช่องขึ้นไป)
-                                sub_items = re.split(r'\s+', item.strip())
+                            item = item.strip()
+                            if not item: continue
+                            
+                            # 3. ถ้าเป็นภาษาไทย และมีการเว้นวรรค (อาจจะแยกคำด้วยเว้นวรรค)
+                            if re.search(r'[\u0E00-\u0E7F]', item) and ' ' in item:
+                                # ใช้ Regex แยกด้วยช่องว่างที่มากกว่า 1 ช่อง (มักเป็นการแยก Keyword จริงๆ)
+                                # แต่ถ้าช่องว่างเดียว อาจจะเป็นส่วนหนึ่งของคำ ให้ลองรักษาไว้ก่อน
+                                sub_items = re.split(r'\s{2,}', item) 
+                                
+                                # หากแยกออกมาแล้วได้ก้อนเดียว แสดงว่าเว้นวรรคที่มีอยู่อาจจะเป็นแค่การตัดคำ
+                                # ให้ลองแยกด้วยเว้นวรรคเดียว แต่ต้องเช็คความยาวคำ
+                                if len(sub_items) == 1:
+                                    sub_items = re.split(r'\s+', item)
+
                                 for sub in sub_items:
-                                    if sub.strip():
-                                        final_keywords.append(ExtractServices._clean_text(sub))
+                                    cleaned_sub = ExtractServices._clean_text(sub)
+                                    if cleaned_sub and len(cleaned_sub) > 1: # ป้องกันตัวอักษรโดดๆ
+                                        final_keywords.append(cleaned_sub)
                             else:
-                                # ถ้าเป็นภาษาอังกฤษหรือไม่มีเว้นวรรค ให้คลีนและใส่ลงไปเลย
-                                if item.strip():
-                                    final_keywords.append(ExtractServices._clean_text(item))
+                                # ภาษาอังกฤษหรือคำไทยที่ติดกัน
+                                cleaned_item = ExtractServices._clean_text(item)
+                                if cleaned_item:
+                                    final_keywords.append(cleaned_item)
                         
-                        results[field] = final_keywords
-                    # --------------------------------------------------
+                        # กำจัดค่าซ้ำและค่า Null
+                        results[field] = list(dict.fromkeys([k for k in final_keywords if k]))
                     
                     else:
-                        # ฟิลด์ทั่วไป (Title, Abstract, etc.)
                         results[field] = ExtractServices._clean_text(val, is_title="title" in field)
                 
                 except (AttributeError, IndexError):
                     results[field] = [] if "keywords" in field else None
             else:
-                # กรณีไม่เจอ Match
                 results[field] = [] if "keywords" in field else None
         
         return results
