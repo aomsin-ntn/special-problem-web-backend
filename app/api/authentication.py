@@ -16,6 +16,7 @@ from uuid import UUID
 from app.services.project_services import ProjectServices
 from app.repository.user_repository import UserRepository
 from app.config import settings
+from app.services.user_services import UserServices
 
 router = APIRouter(prefix="/auth")
 oauth = OAuth()
@@ -132,8 +133,8 @@ async def get_profile(
     db: Session = Depends(get_db)   
     ):
     try:
-        result = UserRepository.get_user_profile(db=db, user_id=current_user.user_id)
-        
+        result = UserServices.get_user_profile(db=db, user_id=current_user.user_id)
+
         if not result:
             raise HTTPException(status_code=404, detail="ไม่พบข้อมูลผู้ใช้งาน")
 

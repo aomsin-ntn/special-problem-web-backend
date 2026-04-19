@@ -95,20 +95,19 @@ async def delete_project(
     user: User = Depends(get_current_user),
 ):
     try:
-        result = await ProjectServices.delete_project(db, project_id)
-        if not result:
-            # ถ้าหาโปรเจกต์ไม่เจอ ให้ throw 404
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND, 
-                detail="Project not found"
-            )
-        return {"message": "Project deleted successfully"}
-        
-    except SQLAlchemyError:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, 
-            detail="Database error occurred while deleting"
-        )
+        result = await ProjectServices.delete_project(db, project_id, user.user_id)
+        if result:
+            return {"message": "ลบโปรเจกต์สำเร็จ"}
+        else:
+            raise HTTPException(status_code=404, detail="ไม่พบโปรเจกต์นี้ในระบบ")
+    except HTTPException:
+        raise
+    except SQLAlchemyError as e:
+        print(f"DB Error: {e}")
+        raise HTTPException(status_code=500, detail="ข้อผิดพลาดในการเชื่อมต่อฐานข้อมูล")
+    except Exception as e:
+        print(f"Delete Error: {e}")
+        raise HTTPException(status_code=500, detail="เกิดข้อผิดพลาดในการลบโปรเจกต์นี้")
 
 @router.get("/")
 async def get_projects(
@@ -188,3 +187,27 @@ async def save_project(
         db.rollback()
         print(f"Unexpected Error: {e}")
         raise HTTPException(status_code=500, detail=f"เกิดข้อผิดพลาด: {str(e)}")
+    
+@router.get("/edit_project/{project_id}")
+async def get_project_details_check_permission(
+    db: Annotated[Session, Depends(get_db)],
+    project_id: UUID,
+    current_user: User = Depends(get_current_user)
+):
+    try:
+        details = await ProjectServices.get_project_details_check_permission(db, project_id, current_user.user_id)
+        
+        if not details:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, 
+                detail="ไม่พบข้อมูลโปรเจกต์นี้"
+            )
+        return details
+        
+    except HTTPException:
+        raise
+    except SQLAlchemyError:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, 
+            detail="เกิดข้อผิดพลาดในการดึงข้อมูลจากฐานข้อมูล"
+        )
