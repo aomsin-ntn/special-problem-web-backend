@@ -234,3 +234,28 @@ async def save_update_project(
         db.rollback()
         print(f"Unexpected Error: {e}")
         raise HTTPException(status_code=500, detail=f"เกิดข้อผิดพลาด: {str(e)}")
+    
+def require_staff_or_professor(current_user: User = Depends(get_current_user)):
+    if current_user.role not in [Role.STAFF, Role.PROFESSOR]:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="เฉพาะ Staff และ Professor เท่านั้นที่สามารถเข้าถึงหน้ารายงานได้"
+        )
+    return current_user
+
+@router.get("/report")
+async def get_projects_report(
+    db: Annotated[Session, Depends(get_db)],
+    request: Annotated[GetProjectRequestParams, Query()],
+    authorized_user: User = Depends(require_staff_or_professor) # ล็อกไว้ให้เฉพาะสิทธิ์ที่กำหนด
+):
+    try:
+        # ใช้ Logic การดึงข้อมูลเดิมจาก Repository ได้เลย
+        projects = await ProjectServices.get_projects(db, request)
+        return projects
+    except SQLAlchemyError as e:
+        print(f"DB Error: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, 
+            detail="ไม่สามารถดึงข้อมูลรายงานโปรเจกต์ได้ในขณะนี้"
+        )

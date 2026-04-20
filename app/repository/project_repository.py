@@ -182,20 +182,22 @@ class ProjectRepository:
             
         if request.sorted_by:
             if request.sorted_by == "downloaded_count":
-                if request.order == "asc":
-                    order_by = Project.downloaded_count.asc()
-                else:
-                    order_by = Project.downloaded_count.desc()
+                order_by = Project.downloaded_count.asc() if request.order == "asc" else Project.downloaded_count.desc()
             elif request.sorted_by == "created_at":
-                if request.order == "asc":
-                    order_by = Project.created_at.asc()
-                else:
-                    order_by = Project.created_at.desc()
+                order_by = Project.created_at.asc() if request.order == "asc" else Project.created_at.desc()
+            elif request.sorted_by == "student_id":
+                order_by = func.min(User.student_id).asc() if request.order == "asc" else func.min(User.student_id).desc()
+            elif request.sorted_by == "user_name_th":
+                order_by = func.min(User.user_name_th).asc() if request.order == "asc" else func.min(User.user_name_th).desc()
+            elif request.sorted_by == "title_th":
+                order_by = Project.title_th.asc() if request.order == "asc" else Project.title_th.desc()
+            elif request.sorted_by == "academic_year":
+                order_by = Project.academic_year.asc() if request.order == "asc" else Project.academic_year.desc()
         else:
             order_by = Project.created_at.desc()
 
         paged_projects = db.exec(
-            select(Project).distinct()
+            select(Project.project_id)
             .join(ProjectAuthor, Project.project_id == ProjectAuthor.project_id)
             .join(User, ProjectAuthor.user_id == User.user_id)
             .join(ProjectAdvisor, Project.project_id == ProjectAdvisor.project_id)
@@ -206,35 +208,42 @@ class ProjectRepository:
             .join(DegreeDepartment, Degree.degree_id == DegreeDepartment.degree_id)
             .join(Department, DegreeDepartment.department_id == Department.department_id)
             .join(Faculty, Department.faculty_id == Faculty.faculty_id)
-            # 👇 เติม isouter=True เพื่อป้องกันโปรเจกต์ที่ไม่มีไฟล์หายไปจากระบบ
             .join(ProjectFile, Project.file_id == ProjectFile.file_id, isouter=True) 
             .where(*filters, Project.is_active == True)
+            .group_by(Project.project_id)
             .order_by(order_by)
             .offset((request.page - 1) * request.limit)
             .limit(request.limit)
         ).all()
 
-        project_ids = [p.project_id for p in paged_projects]
+        project_ids = list(paged_projects)
 
         if not project_ids:
-            projects = []
-        else:
-            projects = db.exec(
-                select(Project, User, Advisor, Keyword, Faculty, Department, ProjectFile)
-                .join(ProjectAuthor, Project.project_id == ProjectAuthor.project_id)
-                .join(User, ProjectAuthor.user_id == User.user_id)
-                .join(ProjectAdvisor, Project.project_id == ProjectAdvisor.project_id)
-                .join(Advisor, ProjectAdvisor.advisor_id == Advisor.advisor_id)
-                .join(ProjectKeyword, Project.project_id == ProjectKeyword.project_id, isouter=True)
-                .join(Keyword, ProjectKeyword.keyword_id == Keyword.keyword_id, isouter=True)
-                .join(Degree, Project.degree_id == Degree.degree_id)
-                .join(DegreeDepartment, Degree.degree_id == DegreeDepartment.degree_id)
-                .join(Department, DegreeDepartment.department_id == Department.department_id)
-                .join(Faculty, Department.faculty_id == Faculty.faculty_id)
-                .join(ProjectFile, Project.file_id == ProjectFile.file_id, isouter=True)
-                .where(Project.project_id.in_(project_ids))
-                .order_by(order_by)
-            ).all()
+            return {
+                "data": [],
+                "metadata": {
+                    "total_items": 0,
+                    "total_pages": 1,
+                    "current_page": request.page,
+                    "per_page": request.limit
+                }
+            }
+    
+        projects = db.exec(
+            select(Project, User, Advisor, Keyword, Faculty, Department, ProjectFile)
+            .join(ProjectAuthor, Project.project_id == ProjectAuthor.project_id)
+            .join(User, ProjectAuthor.user_id == User.user_id)
+            .join(ProjectAdvisor, Project.project_id == ProjectAdvisor.project_id)
+            .join(Advisor, ProjectAdvisor.advisor_id == Advisor.advisor_id)
+            .join(ProjectKeyword, Project.project_id == ProjectKeyword.project_id, isouter=True)
+            .join(Keyword, ProjectKeyword.keyword_id == Keyword.keyword_id, isouter=True)
+            .join(Degree, Project.degree_id == Degree.degree_id)
+            .join(DegreeDepartment, Degree.degree_id == DegreeDepartment.degree_id)
+            .join(Department, DegreeDepartment.department_id == Department.department_id)
+            .join(Faculty, Department.faculty_id == Faculty.faculty_id)
+            .join(ProjectFile, Project.file_id == ProjectFile.file_id, isouter=True)
+            .where(Project.project_id.in_(project_ids))
+        ).all()
 
         total_items = db.exec(
             select(func.count(func.distinct(Project.project_id)))
@@ -268,7 +277,6 @@ class ProjectRepository:
                     "keywords": [],
                     "faculty": faculty.model_dump(),
                     "department": department.model_dump(),
-                    # 👇 แก้ไขให้ดึงจากตัวแปร project_file โดยตรง
                     "project_file": project_file.model_dump() if project_file else None 
                 }
 
@@ -281,8 +289,10 @@ class ProjectRepository:
             if keyword and keyword.keyword_id not in [k["keyword_id"] for k in result[pid]["keywords"]]:
                 result[pid]["keywords"].append(keyword.model_dump())
 
+        ordered_data = [result[pid] for pid in project_ids if pid in result]
+    
         return {
-            "data": list(result.values()),
+            "data": ordered_data,
             "metadata": {
                 "total_items": total_items,
                 "total_pages": total_pages,
