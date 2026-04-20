@@ -259,3 +259,22 @@ async def get_projects_report(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, 
             detail="ไม่สามารถดึงข้อมูลรายงานโปรเจกต์ได้ในขณะนี้"
         )
+
+@router.get("/report/dictionary")
+async def get_dictionary_report_api(
+    db: Annotated[Session, Depends(get_db)],
+    table_type: str = Query(..., description="incorrect, correction, or custom"),
+    page: int = Query(1, ge=1),
+    limit: int = Query(20, ge=1),
+    sorted_by: str = Query(None),
+    order: str = Query("desc"),
+    authorized_user: User = Depends(require_staff_or_professor) # 🟢 บล็อกให้เฉพาะ STAFF/PROFESSOR
+):
+    try:
+        # เรียกใช้ฟังก์ชันจาก Repository (หากคุณแยก Service สามารถนำไปวางผ่านชั้น Service ก่อนได้)
+        result = await ProjectRepository.get_dictionary_report(db, table_type, page, limit, sorted_by, order)
+        return result
+    except Exception as e:
+        db.rollback()
+        print(f"Error fetching dictionary: {e}")
+        raise HTTPException(status_code=500, detail="ไม่สามารถดึงข้อมูลรายงานได้")
