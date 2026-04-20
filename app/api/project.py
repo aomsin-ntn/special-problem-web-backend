@@ -214,6 +214,7 @@ async def get_project_details_check_permission(
     
 @router.post("/save_update_project_data/{project_id}")
 async def save_update_project(
+    project_id: UUID,
     data: ProjectSubmitRequest, 
     db: Annotated[Session, Depends(get_db)], 
     current_user: User = Depends(get_current_user),
@@ -221,7 +222,7 @@ async def save_update_project(
 ):
     try:
         # โยนภาระไปให้ Service จัดการให้หมด
-        result = await service.save_update_project_data(data.data, db, current_user)
+        result = await service.save_update_project_data(str(project_id), data, db, current_user)
         return result
 
     except SQLAlchemyError as db_error:

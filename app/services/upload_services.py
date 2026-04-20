@@ -23,7 +23,7 @@ from app.models.project_keyword import ProjectKeyword
 from app.models.keyword import Keyword
 
 from uuid import uuid4
-from datetime import datetime
+from datetime import datetime, timezone
 from itertools import zip_longest
 import time
 
@@ -232,7 +232,7 @@ class UploadServices:
                                 correct_word=correct,
                                 count=1
                             ))
-
+        db.commit()
         try:
             # 1. สั่งระงับ Autoflush ตลอดการทำงานในบล็อกนี้ ป้องกันระบบแทรกคิว
             with db.no_autoflush:
@@ -371,52 +371,94 @@ class UploadServices:
         
     @staticmethod
     async def save_update_project_data(project_id: str, data: ProjectSubmitRequest, db, current_user):
-        # 1. ดึงโปรเจกต์เดิมมา (พร้อมโหลดความสัมพันธ์เดิมมาด้วย)
-        project = await ProjectServices.get_project_details(db, project_id)
+        from sqlmodel import select
+        
+        # 1. ดึงโปรเจกต์จาก Database เป็น Object (ORM) ตรงๆ ไม่ใช่ List
+        project = db.exec(select(Project).where(Project.project_id == project_id)).first()
+        
         if not project:
             raise HTTPException(status_code=404, detail="ไม่พบโปรเจกต์นี้")
 
-        # --- [ส่วนเดิม: อัปเดต Title, Abstract, Degree ฯลฯ] ---
+        # --- 2. อัปเดตข้อมูลทั่วไป ---
         project.title_th = data.title_th
-        # ... (เหมือนโค้ดก่อนหน้านี้) ...
+        project.title_en = data.title_en
+        project.abstract_th = data.abstract_th
+        project.abstract_en = data.abstract_en
+        project.academic_year = data.academic_year
+        if data.degree and data.degree.degree_id:
+            project.degree_id = data.degree.degree_id
 
-        # --- [2. อัปเดต Advisors] ---
-        # ลบความสัมพันธ์เดิมออกก่อน
-        project.advisors = [] 
-        # วนลูปเพิ่ม Advisor ใหม่จากก้อน JSON
-        for adv in data.advisors:
-            if adv.advisor_id:
-                # สร้างความสัมพันธ์ใหม่ (ขึ้นอยู่กับ ORM ที่ใช้ เช่น SQLAlchemy)
-                # เราจะ Map ค่า advisor_id เข้าไปในตาราง Mapping
-                new_advisor = await db.query(Advisor).get(adv.advisor_id)
-                if new_advisor:
-                    project.advisors.append(new_advisor)
+        project.updated_by = current_user.user_id  # เก็บ UUID ของผู้ที่ล็อกอินอยู่ขณะนั้น
+        project.updated_at = datetime.now(timezone.utc)
+
+        # --- 3. อัปเดต Advisors (ลบของเก่า เพิ่มของใหม่) ---
+        # ลบความสัมพันธ์ Advisor เดิมออกให้หมดก่อน
+        existing_advisors = db.exec(select(ProjectAdvisor).where(ProjectAdvisor.project_id == project_id)).all()
+        for old_adv in existing_advisors:
+            db.delete(old_adv)
+        db.flush() # บังคับเคลียร์ของเก่าลง DB ทันที
         
-        # --- [3. อัปเดต Keywords] ---
-        # ลบ Keyword เดิมที่เชื่อมกับโปรเจกต์นี้ออก
-        project.keywords = []
-        for kw in data.keywords:
-            # กรณีที่ Keyword มีอยู่แล้วในระบบ (ใช้วิธีหาจาก Text หรือ ID)
-            existing_kw = await db.query(Keyword).filter_by(keyword_text_th=kw.keyword_text_th).first()
+        # วนลูปเพิ่ม Advisor ใหม่จากก้อน JSON
+        for idx, adv in enumerate(data.advisors, start=1):
+            if adv.advisor_id:
+                db.add(ProjectAdvisor(
+                    project_id=project.project_id, 
+                    advisor_id=adv.advisor_id, 
+                    advisor_order=idx
+                ))
+        
+        # --- 4. อัปเดต Keywords (ลบของเก่า เพิ่มของใหม่) ---
+        # ลบความสัมพันธ์ Keyword เดิมที่เชื่อมกับโปรเจกต์นี้ออก
+        existing_p_keywords = db.exec(select(ProjectKeyword).where(ProjectKeyword.project_id == project_id)).all()
+        for old_pkw in existing_p_keywords:
+            db.delete(old_pkw)
+        db.flush()
+
+        db_keywords = await ProjectServices.get_keywords(db)
+        used_keyword_ids = set()
+
+        for idx, kw in enumerate(data.keywords, start=1):
+            target_kw_id = None
             
-            if existing_kw:
-                project.keywords.append(existing_kw)
+            if hasattr(kw, 'keyword_id') and kw.keyword_id:
+                target_kw_id = kw.keyword_id
             else:
-                # ถ้าเป็น Keyword ใหม่ที่ OCR เพิ่งอ่านเจอและยังไม่มีใน DB ให้สร้างใหม่
-                new_kw = Keyword(
-                    keyword_text_th=kw.keyword_text_th,
-                    keyword_text_en=kw.keyword_text_en
-                )
-                db.add(new_kw)
-                project.keywords.append(new_kw)
+                th_text = kw.keyword_text_th.strip() if kw.keyword_text_th else ""
+                en_text = kw.keyword_text_en.strip() if kw.keyword_text_en else ""
+                if not th_text and not en_text: continue
 
-        # 4. บันทึกทุกอย่างลง Database
+                match = None
+                for db_kw in db_keywords:
+                    db_th = db_kw.keyword_text_th.strip() if db_kw.keyword_text_th else ""
+                    db_en = db_kw.keyword_text_en.strip() if db_kw.keyword_text_en else ""
+                    if (th_text and th_text == db_th) or (en_text and en_text == db_en):
+                        match = db_kw
+                        break
+
+                if match:
+                    target_kw_id = match.keyword_id
+                else:
+                    new_kw = Keyword(keyword_id=uuid4(), keyword_text_th=th_text, keyword_text_en=en_text)
+                    db.add(new_kw)
+                    db.flush()
+                    target_kw_id = new_kw.keyword_id
+                    db_keywords.append(new_kw)
+
+            if target_kw_id and target_kw_id not in used_keyword_ids:
+                db.add(ProjectKeyword(
+                    project_id=project.project_id, 
+                    keyword_id=target_kw_id, 
+                    keyword_order=idx
+                ))
+                used_keyword_ids.add(target_kw_id)
+
+        # 5. บันทึกทุกอย่างลง Database
         try:
-            await db.commit()
-            await db.refresh(project)
+            db.commit()
+            db.refresh(project)
         except Exception as e:
-            await db.rollback()
+            db.rollback()
             print(f"Update Error: {e}")
-            raise HTTPException(status_code=500, detail="ไม่สามารถอัปเดตข้อมูลกลุ่มสัมพันธ์ได้")
+            raise HTTPException(status_code=500, detail="ไม่สามารถอัปเดตข้อมูลได้")
 
-        return project
+        return {"status": "success", "message": "อัปเดตข้อมูลสำเร็จ"}
