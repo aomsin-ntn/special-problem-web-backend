@@ -139,8 +139,9 @@ class UploadServices:
                 "title_en": fields.get("title_en", ""),
                 "abstract_th": fields.get("abstract_th", ""),
                 "abstract_en": fields.get("abstract_en", ""),
-                "academic_year": fields.get("academic_year", ""),
-                
+                "academic_year_be": fields.get("academic_year_be", ""),
+                "academic_year_ce": fields.get("academic_year_ce", ""),
+
                 # จัดกลุ่มเป็นก้อน โดยอ้างอิง Key ให้ถูกต้อง
                 "degree": {
                     "degree_id": matched_metadata["degree"].degree_id if matched_metadata.get("degree") else None,
@@ -196,7 +197,7 @@ class UploadServices:
                     
                     if incorrect and correct:
                         # 1. ค้นหาใน CorrectionDictionary ว่ามีคำผิดนี้อยู่หรือยัง
-                        existing_dic = db.exec(select(CorrectionDictionary).where(CorrectionDictionary.incorrect_word == incorrect)).first()
+                        existing_dic = await db.exec(select(CorrectionDictionary).where(CorrectionDictionary.incorrect_word == incorrect)).first()
                         
                         if existing_dic:
                             # ถ้ามีแล้ว ให้บวก Count และเช็คว่าคำที่ถูกนี้อยู่ในลิสต์หรือยัง
@@ -216,7 +217,7 @@ class UploadServices:
                                 count=1
                             )
                             db.add(new_dic)
-                            db.flush() # เพื่อให้ได้ word_dic_id มาใช้ต่อ
+                            await db.flush() # เพื่อให้ได้ word_dic_id มาใช้ต่อ
                             existing_dic = new_dic
 
                         # 2. บันทึกลงตารางย่อย IncorrectWord เพื่อเก็บสถิติว่าคำนี้ถูกแก้เป็นอะไรบ่อยที่สุด
@@ -372,96 +373,3 @@ class UploadServices:
             print(f"Transaction failed: {str(e)}")
             raise e
         
-    @staticmethod
-    async def save_update_project_data(project_id: str, data: ProjectSubmitRequest, db, current_user):
-
-        
-        # 1. ดึงโปรเจกต์จาก Database เป็น Object (ORM) ตรงๆ ไม่ใช่ List
-        project = db.exec(select(Project).where(Project.project_id == project_id)).first()
-        
-        if not project:
-            raise HTTPException(status_code=404, detail="ไม่พบโปรเจกต์นี้")
-
-        # --- 2. อัปเดตข้อมูลทั่วไป ---
-        project.title_th = data.title_th
-        project.title_en = data.title_en
-        project.abstract_th = data.abstract_th
-        project.abstract_en = data.abstract_en
-        project.academic_year = data.academic_year
-        if data.degree and data.degree.degree_id:
-            project.degree_id = data.degree.degree_id
-
-        project.updated_by = current_user.user_id  # เก็บ UUID ของผู้ที่ล็อกอินอยู่ขณะนั้น
-        project.updated_at = datetime.now(timezone.utc)
-
-        # --- 3. อัปเดต Advisors (ลบของเก่า เพิ่มของใหม่) ---
-        # ลบความสัมพันธ์ Advisor เดิมออกให้หมดก่อน
-        existing_advisors = db.exec(select(ProjectAdvisor).where(ProjectAdvisor.project_id == project_id)).all()
-        for old_adv in existing_advisors:
-            db.delete(old_adv)
-        db.flush() # บังคับเคลียร์ของเก่าลง DB ทันที
-        
-        # วนลูปเพิ่ม Advisor ใหม่จากก้อน JSON
-        for idx, adv in enumerate(data.advisors, start=1):
-            if adv.advisor_id:
-                db.add(ProjectAdvisor(
-                    project_id=project.project_id, 
-                    advisor_id=adv.advisor_id, 
-                    advisor_order=idx
-                ))
-        
-        # --- 4. อัปเดต Keywords (ลบของเก่า เพิ่มของใหม่) ---
-        # ลบความสัมพันธ์ Keyword เดิมที่เชื่อมกับโปรเจกต์นี้ออก
-        existing_p_keywords = db.exec(select(ProjectKeyword).where(ProjectKeyword.project_id == project_id)).all()
-        for old_pkw in existing_p_keywords:
-            db.delete(old_pkw)
-        db.flush()
-
-        db_keywords = await ProjectServices.get_keywords(db)
-        used_keyword_ids = set()
-
-        for idx, kw in enumerate(data.keywords, start=1):
-            target_kw_id = None
-            
-            if hasattr(kw, 'keyword_id') and kw.keyword_id:
-                target_kw_id = kw.keyword_id
-            else:
-                th_text = kw.keyword_text_th.strip() if kw.keyword_text_th else ""
-                en_text = kw.keyword_text_en.strip() if kw.keyword_text_en else ""
-                if not th_text and not en_text: continue
-
-                match = None
-                for db_kw in db_keywords:
-                    db_th = db_kw.keyword_text_th.strip() if db_kw.keyword_text_th else ""
-                    db_en = db_kw.keyword_text_en.strip() if db_kw.keyword_text_en else ""
-                    if (th_text and th_text == db_th) or (en_text and en_text == db_en):
-                        match = db_kw
-                        break
-
-                if match:
-                    target_kw_id = match.keyword_id
-                else:
-                    new_kw = Keyword(keyword_id=uuid4(), keyword_text_th=th_text, keyword_text_en=en_text)
-                    db.add(new_kw)
-                    db.flush()
-                    target_kw_id = new_kw.keyword_id
-                    db_keywords.append(new_kw)
-
-            if target_kw_id and target_kw_id not in used_keyword_ids:
-                db.add(ProjectKeyword(
-                    project_id=project.project_id, 
-                    keyword_id=target_kw_id, 
-                    keyword_order=idx
-                ))
-                used_keyword_ids.add(target_kw_id)
-
-        # 5. บันทึกทุกอย่างลง Database
-        try:
-            db.commit()
-            db.refresh(project)
-        except Exception as e:
-            db.rollback()
-            print(f"Update Error: {e}")
-            raise HTTPException(status_code=500, detail="ไม่สามารถอัปเดตข้อมูลได้")
-
-        return {"status": "success", "message": "อัปเดตข้อมูลสำเร็จ"}
