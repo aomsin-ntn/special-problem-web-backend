@@ -12,3 +12,4 @@ class UserServices:
     def get_user_profile(db: Session, user_id: str):
         user_profile = UserRepository.get_user_profile(db, user_id)
         return user_profile
+    
