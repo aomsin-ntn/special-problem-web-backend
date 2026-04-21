@@ -36,4 +36,3 @@ class UserRepository:
         ).first()
 
         return result
-    
