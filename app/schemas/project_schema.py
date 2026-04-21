@@ -42,7 +42,8 @@ class ProjectSubmitRequest(BaseModel):
     title_en: str
     abstract_th: str
     abstract_en: str
-    academic_year: str
+    academic_year_be: str
+    academic_year_ce: str
     
     degree: DegreeInput
     department: DepartmentInput
