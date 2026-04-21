@@ -196,7 +196,7 @@ class UploadServices:
                     
                     if incorrect and correct:
                         # 1. ค้นหาใน CorrectionDictionary ว่ามีคำผิดนี้อยู่หรือยัง
-                        existing_dic = await db.exec(select(CorrectionDictionary).where(CorrectionDictionary.incorrect_word == incorrect)).first()
+                        existing_dic = db.exec(select(CorrectionDictionary).where(CorrectionDictionary.incorrect_word == incorrect)).first()
                         
                         if existing_dic:
                             # ถ้ามีแล้ว ให้บวก Count และเช็คว่าคำที่ถูกนี้อยู่ในลิสต์หรือยัง
@@ -216,7 +216,7 @@ class UploadServices:
                                 count=1
                             )
                             db.add(new_dic)
-                            await db.flush() # เพื่อให้ได้ word_dic_id มาใช้ต่อ
+                            db.flush() # เพื่อให้ได้ word_dic_id มาใช้ต่อ
                             existing_dic = new_dic
 
                         # 2. บันทึกลงตารางย่อย IncorrectWord เพื่อเก็บสถิติว่าคำนี้ถูกแก้เป็นอะไรบ่อยที่สุด

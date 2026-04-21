@@ -149,7 +149,11 @@ async def complete_first_login(
         user = db.query(User).filter(User.email == email).first()
 
         if payload.student_id:
-            duplicate_id = db.query(User).filter(User.student_id == payload.student_id).first()
+            duplicate_id = db.query(User).filter(
+                User.student_id == payload.student_id,
+                User.email != email 
+            ).first()
+            
             if duplicate_id:
                 raise HTTPException(status_code=409, detail="Student ID already exists")
 
@@ -227,6 +231,7 @@ async def get_initial_data(
             "user_name_th": user.user_name_th if user else "",
             "user_name_en": user.user_name_en if user else "",
             "student_id": user.student_id if user else "",
+            "degree_id": str(user.degree_id) if user and user.degree_id else "",
             "role": user.role if user else "STUDENT" # หรือใช้ logic @ ที่เราคุยกัน
         }
     except:
