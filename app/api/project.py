@@ -127,11 +127,11 @@ async def save_project(
     data: ProjectSaveRequest, 
     db: Annotated[Session, Depends(get_db)], 
     current_user: User = Depends(get_current_user),
-    service: UploadServices = Depends() # เรียกใช้ Service
+    project_service: ProjectServices = Depends() # เรียกใช้ Service
 ):
     try:
         # โยนภาระไปให้ Service จัดการให้หมด
-        result = await service.save_project_data(data.data, data.old_data, db, current_user)
+        result = await project_service.save_project_data(data.data, data.old_data, db, current_user)
         return result
 
     except SQLAlchemyError as db_error:
@@ -174,10 +174,10 @@ async def save_update_project(
     data: ProjectSubmitRequest, 
     db: Annotated[Session, Depends(get_db)], 
     current_user: User = Depends(get_current_user),
-    service: UploadServices = Depends()
+    project_service: ProjectServices = Depends()
 ):
     try:
-        result = await service.save_update_project_data(str(project_id), data, db, current_user)
+        result = await project_service.save_update_project_data(str(project_id), data, db, current_user)
         return result
 
     except SQLAlchemyError as db_error:
