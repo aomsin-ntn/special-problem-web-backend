@@ -1,30 +1,10 @@
-from http.client import HTTPException
-
-from app.models.advisor import Advisor
-from app.models.correction_dictionary import CorrectionDictionary
-from app.models.incorrect_word import IncorrectWord
-from app.schemas.project_schema import ProjectSubmitRequest
-from sqlmodel import select
-
 from app.services.file_services import FileServices
 from app.services.ocr_services import OCRServices
 from app.services.text_services import TextServices
 from app.services.project_services import ProjectServices
-from app.services.textcomparison_services import TextComparisonServices
-from app.services.user_services import UserServices
 
 from app.config import settings
 
-from app.models.user import User, Role
-from app.models.project_file import ProjectFile
-from app.models.project import Project
-from app.models.project_advisor import ProjectAdvisor
-from app.models.project_author import ProjectAuthor
-from app.models.project_keyword import ProjectKeyword
-from app.models.keyword import Keyword
-
-from uuid import uuid4
-from datetime import datetime, timezone
 from itertools import zip_longest
 import time
 
