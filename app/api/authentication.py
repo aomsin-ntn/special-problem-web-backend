@@ -1,8 +1,6 @@
 from authlib.integrations.starlette_client import OAuth
-from starlette.config import Config
 from fastapi import APIRouter, Request, Response, Depends
 from app.database import get_db
-import os
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.exc import SQLAlchemyError 
 from typing import Annotated
@@ -12,15 +10,16 @@ from uuid import uuid4
 from datetime import datetime, timedelta
 from fastapi import HTTPException
 from fastapi.responses import RedirectResponse
-from uuid import UUID
-from app.services.project_services import ProjectServices
-from app.repository.user_repository import UserRepository
+from urllib.parse import quote
+from itsdangerous import URLSafeTimedSerializer, BadSignature, SignatureExpired
 from app.config import settings
 from app.services.user_services import UserServices
+from app.schemas.auth_schema import FirstLoginCreateUserRequest
 
+# --- 1. CONFIG & OAUTH REGISTRATION ---
 router = APIRouter(prefix="/auth")
 oauth = OAuth()
-
+signup_serializer = URLSafeTimedSerializer(settings.google_client_secret)
 oauth.register(
     name="google",
     client_id=settings.google_client_id,
@@ -29,59 +28,10 @@ oauth.register(
     client_kwargs={"scope": "openid email profile"},
 )
 
-@router.get("/login")
-async def login(request: Request):
-    try:
-        redirect_url = "http://127.0.0.1:8000/auth/callback"
-        return await oauth.google.authorize_redirect(request, redirect_url)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Login Error: {str(e)}")
 
-@router.get("/callback")
-async def callback(db: Annotated[AsyncSession, Depends(get_db)], request: Request, response: Response):
-    try:
-        token = await oauth.google.authorize_access_token(request)
-        user_info = token.get("userinfo")
-        print("User Info:", user_info)
-        user_email = user_info.get("email")
-        
-        user = db.query(User).filter(User.email == user_email).first()
-        if not user:
-            user = User(
-                user_id=uuid4(),
-                student_id=user_email.split("@")[0],  # ใช้ส่วนก่อน @ เป็น student_id ชั่วคราว
-                role=Role.STUDENT,
-                email=user_email,
-            )
-            db.add(user)
-            db.commit()
-            db.refresh(user)
-            
-        session = Session(
-            session_id=uuid4(),
-            user_id=user.user_id,
-            expires_at=datetime.utcnow() + timedelta(days=7)  # กำหนดเวลาหมดอายุของ session
-        )
-        db.add(session)
-        db.commit()
+SIGNUP_TOKEN_SALT = "first-login-signup"
+SIGNUP_TOKEN_MAX_AGE_SECONDS = 60 * 30
 
-        frontend_url = "http://localhost:5173/" 
-        response = RedirectResponse(url=frontend_url)
-        response.set_cookie(
-            key="session_id",
-            value=str(session.session_id),
-            httponly=True,
-            samesite="none",
-            secure=True,  # ควรตั้งเป็น True ใน production
-            max_age=60 * 60 * 24 * 7,  # 7 วัน
-            path="/"
-        )
-        return response
-    except SQLAlchemyError as db_error:
-        db.rollback()  # คืนค่ากรณีมี error
-        raise HTTPException(status_code=500, detail="Database error occurred during callback")
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Callback Error: {str(e)}")
 
 async def get_current_user(request: Request, db: Annotated[AsyncSession, Depends(get_db)]) -> User | None:
     try:
@@ -102,6 +52,126 @@ async def get_current_user(request: Request, db: Annotated[AsyncSession, Depends
     except SQLAlchemyError:
         raise HTTPException(status_code=500, detail="Database connection error")
 
+
+# --- 2. GOOGLE OAUTH FLOW ---
+@router.get("/login")
+async def login(request: Request):
+    try:
+        redirect_url = "http://127.0.0.1:8000/auth/callback"
+        return await oauth.google.authorize_redirect(request, redirect_url)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Login Error: {str(e)}")
+
+@router.get("/callback")
+async def callback(db: Annotated[AsyncSession, Depends(get_db)], request: Request, response: Response):
+    try:
+        token = await oauth.google.authorize_access_token(request)
+        user_info = token.get("userinfo")
+        print("User Info:", user_info)
+        user_email = user_info.get("email")
+        
+        user = db.query(User).filter(User.email == user_email).first()
+        frontend_url = "http://localhost:5173/"
+
+        if not user:
+            signup_token = signup_serializer.dumps({"email": user_email}, salt=SIGNUP_TOKEN_SALT)
+            first_login_url = f"{frontend_url}first-login?token={quote(signup_token)}"
+            print(first_login_url)
+            return RedirectResponse(url=first_login_url)
+
+        
+        session = Session(
+            session_id=uuid4(),
+            user_id=user.user_id,
+            expires_at=datetime.utcnow() + timedelta(days=7)  # กำหนดเวลาหมดอายุของ session
+        )
+        db.add(session)
+        db.commit()
+
+        response = RedirectResponse(url=frontend_url)
+        response.set_cookie(
+            key="session_id",
+            value=str(session.session_id),
+            httponly=True,
+            samesite="none",
+            secure=True,  # ควรตั้งเป็น True ใน production
+            max_age=60 * 60 * 24 * 7,  # 7 วัน
+            path="/"
+        )
+        return response
+    except SQLAlchemyError as db_error:
+        db.rollback()  # คืนค่ากรณีมี error
+        raise HTTPException(status_code=500, detail="Database error occurred during callback")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Callback Error: {str(e)}")
+
+
+# --- 3. FIRST LOGIN / ONBOARDING ---
+@router.post("/first-login/complete")
+async def complete_first_login(
+    payload: FirstLoginCreateUserRequest,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    response: Response,
+):
+    try:
+        token_data = signup_serializer.loads(
+            payload.token,
+            salt=SIGNUP_TOKEN_SALT,
+            max_age=SIGNUP_TOKEN_MAX_AGE_SECONDS,
+        )
+        email = token_data.get("email")
+        if not email:
+            raise HTTPException(status_code=400, detail="Invalid signup token")
+
+        existing_user = db.query(User).filter(User.email == email).first()
+        if existing_user:
+            raise HTTPException(status_code=409, detail="User already exists")
+
+        duplicate_student_id = db.query(User).filter(User.student_id == payload.student_id).first()
+        if duplicate_student_id:
+            raise HTTPException(status_code=409, detail="Student ID already exists")
+
+        user = User(
+            user_id=uuid4(),
+            student_id=payload.student_id or None,
+            user_name_th=payload.user_name_th,
+            user_name_en=payload.user_name_en,
+            degree_id=payload.degree_id or None,
+            role=Role.STUDENT,
+            email=email,
+        )
+        db.add(user)
+        db.commit()
+        db.refresh(user)
+
+        session = Session(
+            session_id=uuid4(),
+            user_id=user.user_id,
+            expires_at=datetime.utcnow() + timedelta(days=7),
+        )
+        db.add(session)
+        db.commit()
+
+        response.set_cookie(
+            key="session_id",
+            value=str(session.session_id),
+            httponly=True,
+            samesite="none",
+            secure=True,
+            max_age=60 * 60 * 24 * 7,
+            path="/",
+        )
+        return response
+    except (BadSignature, SignatureExpired):
+        raise HTTPException(status_code=400, detail="Signup token expired or invalid")
+    except HTTPException:
+        raise
+    except SQLAlchemyError:
+        db.rollback()
+        raise HTTPException(status_code=500, detail="Database error occurred while creating user")
+
+
+# --- 4. SESSION & ACCESS CONTROL ---
 @router.get("/protected")
 async def protected(user=Depends(get_current_user)):
     return {
@@ -127,6 +197,8 @@ async def logout(request: Request, response: Response, db: Annotated[AsyncSessio
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Logout Error: {str(e)}")
 
+
+# --- 5. USER PROFILE ---
 @router.get("/me")
 async def get_profile(
     current_user: User = Depends(get_current_user), 
@@ -154,3 +226,4 @@ async def get_profile(
         raise HTTPException(status_code=500, detail="Database error occurred while fetching profile")
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error fetching profile: {str(e)}")
+    

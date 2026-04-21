@@ -7,6 +7,7 @@ from app.services.project_services import ProjectServices
 
 router = APIRouter(prefix="/master")
 
+# --- 1. MASTER DATA ENDPOINTS ---
 @router.get("/faculty")
 async def get_master_faculty(
     db: Annotated[Session, Depends(get_db)]

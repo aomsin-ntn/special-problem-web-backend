@@ -37,78 +37,7 @@ from app.repository.user_repository import UserRepository
 
 router = APIRouter(prefix="/project")
 
-@router.post("/upload")
-async def handle_upload(
-    db: Annotated[AsyncSession, Depends(get_db)],
-    file: UploadFile = File(...),
-    service: UploadServices = Depends(),
-    pages: list[int] = Query([1], description="Page numbers for OCR"),
-    user: User = Depends(get_current_user),
-):
-    try:
-        # เช็คก่อนว่าเป็น PDF จริงไหม
-        if not file.filename.endswith(".pdf"):
-            raise HTTPException(status_code=400, detail="รองรับเฉพาะไฟล์ PDF เท่านั้น")
-
-        result = await service.handle_upload(file, pages=pages, db=db, current_user=user)
-        return result
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        print(f"OCR/Upload Error: {e}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, 
-            detail=f"เกิดข้อผิดพลาดในการอ่านไฟล์: {str(e)}"
-        )
-
-@router.get("/download/file/{project_id}")
-async def download_projectfile(
-    db: Annotated[Session, Depends(get_db)],
-    project_id: UUID,
-):
-    try:
-        projectfile = await ProjectServices.download_projectfile(db, project_id)
-        
-        # ดักจับกรณีที่ไม่มีข้อมูลใน Database
-        if not projectfile:
-            raise HTTPException(status_code=404, detail="ไม่พบข้อมูลไฟล์นี้ในระบบ")
-
-        return FileResponse(
-            path=projectfile.file_path,
-            filename=projectfile.file_name,
-            media_type="application/pdf"
-        )
-    except HTTPException:
-        raise # โยน 404 ออกไปเลย
-    except SQLAlchemyError as e:
-        print(f"DB Error: {e}")
-        raise HTTPException(status_code=500, detail="ข้อผิดพลาดในการเชื่อมต่อฐานข้อมูล")
-    except Exception as e:
-        print(f"File Error: {e}")
-        raise HTTPException(status_code=500, detail="ไม่พบไฟล์ในเซิร์ฟเวอร์ หรือไฟล์อาจถูกลบไปแล้ว")
-
-@router.patch("/delete")
-async def delete_project(
-    db: Annotated[Session, Depends(get_db)],
-    project_id: UUID,
-    user: User = Depends(get_current_user),
-):
-    try:
-        result = await ProjectServices.delete_project(db, project_id, user.user_id)
-        if result:
-            return {"message": "ลบโปรเจกต์สำเร็จ"}
-        else:
-            raise HTTPException(status_code=404, detail="ไม่พบโปรเจกต์นี้ในระบบ")
-    except HTTPException:
-        raise
-    except SQLAlchemyError as e:
-        print(f"DB Error: {e}")
-        raise HTTPException(status_code=500, detail="ข้อผิดพลาดในการเชื่อมต่อฐานข้อมูล")
-    except Exception as e:
-        print(f"Delete Error: {e}")
-        raise HTTPException(status_code=500, detail="เกิดข้อผิดพลาดในการลบโปรเจกต์นี้")
-
+# --- 1. Basic Fetching (Read) ---
 @router.get("/")
 async def get_projects(
     db: Annotated[Session, Depends(get_db)],
@@ -166,6 +95,32 @@ async def get_faculty(
         raise HTTPException(status_code=500, detail="เกิดข้อผิดพลาดในการดึงข้อมูลคณะ")
 
 
+# --- 2. Create & Update Logic ---
+@router.post("/upload")
+async def handle_upload(
+    db: Annotated[AsyncSession, Depends(get_db)],
+    file: UploadFile = File(...),
+    service: UploadServices = Depends(),
+    pages: list[int] = Query([1], description="Page numbers for OCR"),
+    user: User = Depends(get_current_user),
+):
+    try:
+        # เช็คก่อนว่าเป็น PDF จริงไหม
+        if not file.filename.endswith(".pdf"):
+            raise HTTPException(status_code=400, detail="รองรับเฉพาะไฟล์ PDF เท่านั้น")
+
+        result = await service.handle_upload(file, pages=pages, db=db, current_user=user)
+        return result
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"OCR/Upload Error: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, 
+            detail=f"เกิดข้อผิดพลาดในการอ่านไฟล์: {str(e)}"
+        )
+
 @router.post("/save")
 async def save_project(
     data: ProjectSaveRequest, 
@@ -187,7 +142,7 @@ async def save_project(
         db.rollback()
         print(f"Unexpected Error: {e}")
         raise HTTPException(status_code=500, detail=f"เกิดข้อผิดพลาด: {str(e)}")
-    
+
 @router.get("/edit_project/{project_id}")
 async def get_project_details_check_permission(
     db: Annotated[Session, Depends(get_db)],
@@ -211,17 +166,16 @@ async def get_project_details_check_permission(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, 
             detail="เกิดข้อผิดพลาดในการดึงข้อมูลจากฐานข้อมูล"
         )
-    
+
 @router.post("/save_update_project_data/{project_id}")
 async def save_update_project(
     project_id: UUID,
     data: ProjectSubmitRequest, 
     db: Annotated[Session, Depends(get_db)], 
     current_user: User = Depends(get_current_user),
-    service: UploadServices = Depends() # เรียกใช้ Service
+    service: UploadServices = Depends()
 ):
     try:
-        # โยนภาระไปให้ Service จัดการให้หมด
         result = await service.save_update_project_data(str(project_id), data, db, current_user)
         return result
 
@@ -234,7 +188,58 @@ async def save_update_project(
         db.rollback()
         print(f"Unexpected Error: {e}")
         raise HTTPException(status_code=500, detail=f"เกิดข้อผิดพลาด: {str(e)}")
-    
+
+
+# --- 3. Resource Management (File & Deletion) ---
+@router.get("/download/file/{project_id}")
+async def download_projectfile(
+    db: Annotated[Session, Depends(get_db)],
+    project_id: UUID,
+):
+    try:
+        projectfile = await ProjectServices.download_projectfile(db, project_id)
+        
+        # ดักจับกรณีที่ไม่มีข้อมูลใน Database
+        if not projectfile:
+            raise HTTPException(status_code=404, detail="ไม่พบข้อมูลไฟล์นี้ในระบบ")
+
+        return FileResponse(
+            path=projectfile.file_path,
+            filename=projectfile.file_name,
+            media_type="application/pdf"
+        )
+    except HTTPException:
+        raise # โยน 404 ออกไปเลย
+    except SQLAlchemyError as e:
+        print(f"DB Error: {e}")
+        raise HTTPException(status_code=500, detail="ข้อผิดพลาดในการเชื่อมต่อฐานข้อมูล")
+    except Exception as e:
+        print(f"File Error: {e}")
+        raise HTTPException(status_code=500, detail="ไม่พบไฟล์ในเซิร์ฟเวอร์ หรือไฟล์อาจถูกลบไปแล้ว")
+
+@router.patch("/delete")
+async def delete_project(
+    db: Annotated[Session, Depends(get_db)],
+    project_id: UUID,
+    user: User = Depends(get_current_user),
+):
+    try:
+        result = await ProjectServices.delete_project(db, project_id, user.user_id)
+        if result:
+            return {"message": "ลบโปรเจกต์สำเร็จ"}
+        else:
+            raise HTTPException(status_code=404, detail="ไม่พบโปรเจกต์นี้ในระบบ")
+    except HTTPException:
+        raise
+    except SQLAlchemyError as e:
+        print(f"DB Error: {e}")
+        raise HTTPException(status_code=500, detail="ข้อผิดพลาดในการเชื่อมต่อฐานข้อมูล")
+    except Exception as e:
+        print(f"Delete Error: {e}")
+        raise HTTPException(status_code=500, detail="เกิดข้อผิดพลาดในการลบโปรเจกต์นี้")
+
+
+# --- 4. Reports & Staff Only (Admin) ---   
 def require_staff_or_professor(current_user: User = Depends(get_current_user)):
     if current_user.role not in [Role.STAFF, Role.PROFESSOR]:
         raise HTTPException(
@@ -247,7 +252,7 @@ def require_staff_or_professor(current_user: User = Depends(get_current_user)):
 async def get_projects_report(
     db: Annotated[Session, Depends(get_db)],
     request: Annotated[GetProjectRequestParams, Query()],
-    authorized_user: User = Depends(require_staff_or_professor) # ล็อกไว้ให้เฉพาะสิทธิ์ที่กำหนด
+    authorized_user: User = Depends(require_staff_or_professor)
 ):
     try:
         # ใช้ Logic การดึงข้อมูลเดิมจาก Repository ได้เลย
@@ -268,11 +273,10 @@ async def get_dictionary_report_api(
     limit: int = Query(20, ge=1),
     sorted_by: str = Query(None),
     order: str = Query("desc"),
-    authorized_user: User = Depends(require_staff_or_professor) # 🟢 บล็อกให้เฉพาะ STAFF/PROFESSOR
+    authorized_user: User = Depends(require_staff_or_professor)
 ):
     try:
-        # เรียกใช้ฟังก์ชันจาก Repository (หากคุณแยก Service สามารถนำไปวางผ่านชั้น Service ก่อนได้)
-        result = await ProjectRepository.get_dictionary_report(db, table_type, page, limit, sorted_by, order)
+        result = await ProjectServices.get_dictionary_report(db, table_type, page, limit, sorted_by, order)
         return result
     except Exception as e:
         db.rollback()
