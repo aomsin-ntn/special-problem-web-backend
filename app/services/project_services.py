@@ -1,4 +1,4 @@
-import datetime
+from datetime import datetime, timezone
 
 from app.models import department
 from app.models.incorrect_word import IncorrectWord

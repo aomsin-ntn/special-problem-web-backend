@@ -74,7 +74,7 @@ def require_role(allowed_roles: Union[Role, List[Role]]):
 @router.get("/login")
 async def login(request: Request):
     try:
-        redirect_url = "http://127.0.0.1:8000/auth/callback"
+        redirect_url = "http://localhost:8000/auth/callback"
         return await oauth.google.authorize_redirect(request, redirect_url)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Login Error: {str(e)}")
@@ -117,8 +117,8 @@ async def callback(db: Annotated[AsyncSession, Depends(get_db)], request: Reques
             key="session_id",
             value=str(session.session_id),
             httponly=True,
-            samesite="none",
-            secure=True,  # ควรตั้งเป็น True ใน production
+            samesite="lax",
+            secure=False,  # ควรตั้งเป็น True ใน production
             max_age=60 * 60 * 24 * 7,  # 7 วัน
             path="/"
         )
