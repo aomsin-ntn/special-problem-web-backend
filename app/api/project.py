@@ -275,3 +275,4 @@ async def get_dictionary_report_api(
         db.rollback()
         print(f"Error fetching dictionary: {e}")
         raise HTTPException(status_code=500, detail="ไม่สามารถดึงข้อมูลรายงานได้")
+    
