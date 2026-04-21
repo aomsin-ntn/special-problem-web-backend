@@ -1,4 +1,5 @@
 from authlib.integrations.starlette_client import OAuth
+from click import prompt
 from fastapi import APIRouter, Request, Response, Depends
 from app.database import get_db
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -38,6 +39,7 @@ async def get_current_user(request: Request, db: Annotated[AsyncSession, Depends
     try:
         print(request.cookies)
         session_id = request.cookies.get("session_id")
+            
         if not session_id:
             print("ล็อกอินไม่สำเร็จ")
             raise HTTPException(status_code=401, detail="Not authenticated")
@@ -74,8 +76,8 @@ def require_role(allowed_roles: Union[Role, List[Role]]):
 @router.get("/login")
 async def login(request: Request):
     try:
-        redirect_url = "http://localhost:8000/auth/callback"
-        return await oauth.google.authorize_redirect(request, redirect_url)
+        redirect_url = str(request.url_for("callback"))
+        return await oauth.google.authorize_redirect(request, redirect_url, prompt="select_account")
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Login Error: {str(e)}")
 
@@ -117,8 +119,8 @@ async def callback(db: Annotated[AsyncSession, Depends(get_db)], request: Reques
             key="session_id",
             value=str(session.session_id),
             httponly=True,
-            samesite="lax",
-            secure=False,  # ควรตั้งเป็น True ใน production
+            samesite="none",
+            secure=True,  # ควรตั้งเป็น True ใน production
             max_age=60 * 60 * 24 * 7,  # 7 วัน
             path="/"
         )
@@ -230,7 +232,8 @@ async def get_initial_data(
             "email": email,
             "user_name_th": user.user_name_th if user else "",
             "user_name_en": user.user_name_en if user else "",
-            "student_id": user.student_id if user else "",
+            # "student_id": user.student_id if user else "",
+            "student_id": email.split('@')[0] if email else "", # ถ้า email มีค่า ให้เอาแค่ส่วนที่อยู่ก่อน @ มาเป็น student_id ชั่วคราว
             "degree_id": str(user.degree_id) if user and user.degree_id else "",
             "role": user.role if user else "STUDENT" # หรือใช้ logic @ ที่เราคุยกัน
         }
@@ -293,4 +296,3 @@ async def get_profile(
         raise HTTPException(status_code=500, detail="Database error occurred while fetching profile")
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error fetching profile: {str(e)}")
-    
