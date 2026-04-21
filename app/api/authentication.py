@@ -4,6 +4,7 @@ from app.database import get_db
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.exc import SQLAlchemyError 
 from typing import Annotated, List, Union
+from app.models import user
 from app.models.user import User, Role
 from app.models.session import Session
 from uuid import uuid4
@@ -166,11 +167,16 @@ async def complete_first_login(
             )
             db.add(user)
 
-        user.student_id = payload.student_id or user.student_id
         user.user_name_th = payload.user_name_th
         user.user_name_en = payload.user_name_en
-        user.degree_id = payload.degree_id or user.degree_id
         user.last_login_at = datetime.utcnow()
+        
+        if user_role == Role.STUDENT:
+            user.student_id = payload.student_id or user.student_id
+            user.degree_id = payload.degree_id or user.degree_id
+        else:
+            user.student_id = None
+            user.degree_id = None
 
         db.flush()
 
