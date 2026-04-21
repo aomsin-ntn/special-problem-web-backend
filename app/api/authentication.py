@@ -9,7 +9,7 @@ from app.models.session import Session
 from uuid import uuid4
 from datetime import datetime, timedelta
 from fastapi import HTTPException
-from fastapi.responses import RedirectResponse
+from fastapi.responses import JSONResponse, RedirectResponse
 from urllib.parse import quote
 from itsdangerous import URLSafeTimedSerializer, BadSignature, SignatureExpired
 from app.config import settings
@@ -134,7 +134,6 @@ async def callback(db: Annotated[AsyncSession, Depends(get_db)], request: Reques
 async def complete_first_login(
     payload: FirstLoginCreateUserRequest,
     db: Annotated[AsyncSession, Depends(get_db)],
-    response: Response,
 ):
     try:
         token_data = signup_serializer.loads(
@@ -146,45 +145,55 @@ async def complete_first_login(
         if not email:
             raise HTTPException(status_code=400, detail="Invalid signup token")
 
-        existing_user = db.query(User).filter(User.email == email).first()
-        if existing_user:
-            raise HTTPException(status_code=409, detail="User already exists")
+        user = db.query(User).filter(User.email == email).first()
 
-        duplicate_student_id = db.query(User).filter(User.student_id == payload.student_id).first()
-        if duplicate_student_id:
-            raise HTTPException(status_code=409, detail="Student ID already exists")
+        if payload.student_id:
+            duplicate_id = db.query(User).filter(User.student_id == payload.student_id).first()
+            if duplicate_id:
+                raise HTTPException(status_code=409, detail="Student ID already exists")
 
-        user = User(
-            user_id=uuid4(),
-            student_id=payload.student_id or None,
-            user_name_th=payload.user_name_th,
-            user_name_en=payload.user_name_en,
-            degree_id=payload.degree_id or None,
-            role=Role.STUDENT,
-            email=email,
-        )
-        db.add(user)
-        db.commit()
-        db.refresh(user)
+        local_part = email.split('@')[0]
+        if local_part.isdigit():
+            user_role = Role.STUDENT
+        else:            
+            user_role = Role.STAFF
 
-        session = Session(
+        if not user:
+            user = User(
+                user_id=uuid4(),
+                email=email,
+                role=user_role
+            )
+            db.add(user)
+
+        user.student_id = payload.student_id or user.student_id
+        user.user_name_th = payload.user_name_th
+        user.user_name_en = payload.user_name_en
+        user.degree_id = payload.degree_id or user.degree_id
+        user.last_login_at = datetime.utcnow()
+
+        db.flush()
+
+        new_session = Session(
             session_id=uuid4(),
             user_id=user.user_id,
             expires_at=datetime.utcnow() + timedelta(days=7),
         )
-        db.add(session)
+        db.add(new_session)
         db.commit()
 
-        response.set_cookie(
+        response_obj = JSONResponse(content={"message": "First login completed successfully"})
+        response_obj.set_cookie(
             key="session_id",
-            value=str(session.session_id),
+            value=str(new_session.session_id),
             httponly=True,
             samesite="none",
             secure=True,
             max_age=60 * 60 * 24 * 7,
             path="/",
         )
-        return response
+        return response_obj
+    
     except (BadSignature, SignatureExpired):
         raise HTTPException(status_code=400, detail="Signup token expired or invalid")
     except HTTPException:
@@ -192,6 +201,30 @@ async def complete_first_login(
     except SQLAlchemyError:
         db.rollback()
         raise HTTPException(status_code=500, detail="Database error occurred while creating user")
+    
+@router.get("/first-login/me")
+async def get_initial_data(
+    token: str, # รับ Token จาก URL parameter
+    db: AsyncSession = Depends(get_db)
+):
+    try:
+        # 1. แกะ Token ดูว่าเป็นใคร
+        token_data = signup_serializer.loads(token, salt=SIGNUP_TOKEN_SALT, max_age=SIGNUP_TOKEN_MAX_AGE_SECONDS)
+        email = token_data.get("email")
+
+        # 2. ไปดูใน DB ว่ามีข้อมูลเดิมที่ Admin ใส่ไว้ไหม
+        user = db.query(User).filter(User.email == email).first()
+
+        # 3. ส่งข้อมูลกลับไปให้ Frontend (ถ้าไม่มีก็ส่งค่าว่าง)
+        return {
+            "email": email,
+            "user_name_th": user.user_name_th if user else "",
+            "user_name_en": user.user_name_en if user else "",
+            "student_id": user.student_id if user else "",
+            "role": user.role if user else "STUDENT" # หรือใช้ logic @ ที่เราคุยกัน
+        }
+    except:
+        raise HTTPException(status_code=400, detail="Token invalid")
 
 
 # --- 4. SESSION & ACCESS CONTROL ---
