@@ -5,8 +5,10 @@ class ExtractServices:
     # ลบพวก .* หรือเงื่อนไขที่ซ้อนกันเยอะๆ ออก เพื่อป้องกัน Regex Error
     STOP_ALL = r'(?:ชื่อนักศึกษา|ชื่อผู้จัดทำ|ผู้จัดทำ|Students?|ปริญญา|ภาควิชา|คณะ|มหาวิทยาลัย|มหาวิทลัย|ปีการศึกษา|อาจารย์|บทคัดย่อ|คำสำคัญ|Degree|Department|Faculty|School|University|Academic|Advisor|Abstr?act|Keywords?|Title|\||$)'
 
+    STOP_TITLE = r'(?:ชื่อนักศึกษา|ชื่อผู้จัดทำ|ผู้จัดทำ|Students?|โดย|By|เสนอโดย|\||$)'
+
     TH_PATTERNS = {
-        "title_th": r'(?:หัวข้อ\s*(?:โครงงาน|ปัญหา|สหกิจ)พิเศษ|หัวข้อ|เรื่อง|โครงการสหกิจศึกษา|สหกิจศึกษา|โครงการ)[:\s]*(.*?)(?=' + STOP_ALL + ')',
+        "title_th": r'(?:หัวข้อ\s*(?:โครงงาน|ปัญหา|สหกิจ)พิเศษ|หัวข้อ|เรื่อง|โครงการสหกิจศึกษา|สหกิจศึกษา|โครงการ)[:\s]*(.*?)(?=' + STOP_TITLE + ')',
         "degree_th": r'ปริญญา[:\s]*(.*?)(?=' + STOP_ALL + ')',
         "department_th": r'ภาควิชา[:\s]*(.*?)(?=' + STOP_ALL + ')',
         "faculty_th": r'(?:คณะ|คญะ)[:\s]*(.*?)(?=' + STOP_ALL + ')',
@@ -18,7 +20,7 @@ class ExtractServices:
     }
 
     EN_PATTERNS = {
-        "title_en": r'(?:Title|title)[:\s]*(.*?)(?=' + STOP_ALL + ')',
+        "title_en": r'(?:Title|title)[:\s]*(.*?)(?=' + STOP_TITLE + ')',
         "degree_en": r'Degree[:\s]*(.*?)(?=' + STOP_ALL + ')',
         "department_en": r'Department[:\s]*(.*?)(?=' + STOP_ALL + ')',
         "faculty_en": r'(?:Faculty|School)[:\s]*(.*?)(?=' + STOP_ALL + ')',
@@ -121,6 +123,7 @@ class ExtractServices:
         
         all_patterns = {**ExtractServices.TH_PATTERNS, **ExtractServices.EN_PATTERNS}
         
+        # 1. วนลูปดึงข้อมูลจาก Regex Patterns ทั้งหมด
         for field, pattern in all_patterns.items():
             if "student" in field or "advisor" in field: 
                 continue
@@ -159,6 +162,37 @@ class ExtractServices:
             except re.error as e:
                 print(f"REGEX ERROR: {e.msg}")
                 results[field] = None
+
+        # 2. --- Logic พิเศษ: เติมปีการศึกษาอัตโนมัติ (BE <-> CE Auto-fill) ---
+        def extract_digit(raw_text):
+            if not raw_text: return None
+            # ดึงตัวเลข 4 หลักตัวแรกที่เจอ
+            digit_match = re.search(r'(\d{4})', str(raw_text))
+            return int(digit_match.group(1)) if digit_match else None
+
+        year_be_val = extract_digit(results.get("year_th"))
+        year_ce_val = extract_digit(results.get("year_en"))
+
+        # Case A: มีแต่ พ.ศ. (TH) -> เติม ค.ศ. (EN)
+        if year_be_val and not year_ce_val:
+            if 2400 < year_be_val < 2700:
+                results["year_en"] = str(year_be_val - 543)
+                print(f"  [Auto-fill] Generated year_en from BE: {results['year_en']}")
+
+        # Case B: มีแต่ ค.ศ. (EN) -> เติม พ.ศ. (TH)
+        elif year_ce_val and not year_be_val:
+            if 1900 < year_ce_val < 2200:
+                results["year_th"] = str(year_ce_val + 543)
+                print(f"  [Auto-fill] Generated year_th from CE: {results['year_th']}")
         
+        # Case C: ตรวจสอบความถูกต้องกรณีได้มาทั้งคู่แต่เลขเหมือนกัน (OCR อาจอ่านชื่อหัวข้อผิด)
+        elif year_be_val and year_ce_val:
+            if year_be_val == year_ce_val and year_be_val > 2400:
+                results["year_en"] = str(year_be_val - 543)
+                print(f"  [Auto-fill] Corrected year_en: {year_be_val} -> {results['year_en']}")
+
+        results["academic_year_be"] = results.pop("year_th", None)
+        results["academic_year_ce"] = results.pop("year_en", None)
+
         print("=== EXTRACTION COMPLETED ===\n")
         return results

@@ -139,8 +139,9 @@ class UploadServices:
                 "title_en": fields.get("title_en", ""),
                 "abstract_th": fields.get("abstract_th", ""),
                 "abstract_en": fields.get("abstract_en", ""),
-                "academic_year": fields.get("academic_year", ""),
-                
+                "academic_year_be": fields.get("academic_year_be", ""),
+                "academic_year_ce": fields.get("academic_year_ce", ""),
+
                 # จัดกลุ่มเป็นก้อน โดยอ้างอิง Key ให้ถูกต้อง
                 "degree": {
                     "degree_id": matched_metadata["degree"].degree_id if matched_metadata.get("degree") else None,
@@ -196,27 +197,32 @@ class UploadServices:
                     
                     if incorrect and correct:
                         # 1. ค้นหาใน CorrectionDictionary ว่ามีคำผิดนี้อยู่หรือยัง
-                        existing_dic = await db.exec(select(CorrectionDictionary).where(CorrectionDictionary.incorrect_word == incorrect)).first()
+                        existing_dic = db.exec(select(CorrectionDictionary).where(CorrectionDictionary.incorrect_word == incorrect)).first()
                         
                         if existing_dic:
-                            # ถ้ามีแล้ว ให้บวก Count และเช็คว่าคำที่ถูกนี้อยู่ในลิสต์หรือยัง
+                            # 1. บวก Count รวมของคำผิดนี้เสมอ
                             existing_dic.count += 1
-                            if existing_dic.correct_word_list is None:
-                                existing_dic.correct_word_list = []
-                            
-                            if correct not in existing_dic.correct_word_list:
-                                existing_dic.correct_word_list.append(correct)
-                            
                             existing_dic.updated_at = datetime.utcnow()
+                            
+                            # 2. ตรวจสอบและเพิ่มคำใหม่เข้าไปในลิสต์ (ถ้ายังไม่มี)
+                            current_list = existing_dic.correct_word_list if existing_dic.correct_word_list is not None else []
+                            
+                            # เช็คว่าคำใหม่ (correct) มีอยู่ในลิสต์ปัจจุบันหรือยัง
+                            if correct not in current_list:
+                                # สร้างลิสต์ใหม่เพื่อความชัวร์ว่า SQLAlchemy จะเห็นการเปลี่ยนแปลง (Re-assignment)
+                                new_list = list(current_list) 
+                                new_list.append(correct)
+                                existing_dic.correct_word_list = new_list
+                            
                         else:
-                            # ถ้ายังไม่มี ให้สร้าง Entry ใหม่
+                            # กรณีสร้าง Entry ใหม่ครั้งแรก
                             new_dic = CorrectionDictionary(
                                 incorrect_word=incorrect,
-                                correct_word_list=[correct],
+                                correct_word_list=[correct], # เริ่มต้นด้วยลิสต์ที่มีคำเดียว
                                 count=1
                             )
                             db.add(new_dic)
-                            await db.flush() # เพื่อให้ได้ word_dic_id มาใช้ต่อ
+                            db.flush() 
                             existing_dic = new_dic
 
                         # 2. บันทึกลงตารางย่อย IncorrectWord เพื่อเก็บสถิติว่าคำนี้ถูกแก้เป็นอะไรบ่อยที่สุด
@@ -274,7 +280,8 @@ class UploadServices:
                     title_en=data.title_en,
                     abstract_th=data.abstract_th,
                     abstract_en=data.abstract_en,
-                    academic_year=data.academic_year,
+                    academic_year_be=data.academic_year_be, 
+                    academic_year_ce=data.academic_year_ce,
                     degree_id=actual_degree_id,
                     # faculty_id=actual_faculty_id, # ใส่ตามชื่อ field ใน Model ของคุณ
                     # department_id=actual_dept_id,

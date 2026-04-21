@@ -13,9 +13,18 @@ class SpellServices:
         self.spell_cache = {}
         self.error_dict = {}
         if error_dict:
-            # สมมติ item คือ [wrong, correct]
-            for wrong, correct in error_dict:
-                self.error_dict[wrong] = {"correct": correct}
+            # error_dict_rows จะเป็น [(IncorrectWord, CorrectionDictionary), ...]
+            for inc_obj, corr_obj in error_dict:
+                # inc_obj.word คือ คำที่ผิด
+                # corr_obj.correct_word คือ คำที่ถูก
+                wrong = inc_obj.word.strip()
+                correct = corr_obj.correct_word.strip()
+                
+                if wrong not in self.error_dict:
+                    self.error_dict[wrong] = []
+                
+                if correct not in self.error_dict[wrong]:
+                    self.error_dict[wrong].append(correct)
                 
         # เก็บไว้ใช้กับ deepcut.tokenize
         self.custom_segmentation_dict = list(set(custom_dict)) if custom_dict else []
@@ -63,7 +72,7 @@ class SpellServices:
                 stats["incorrect"] += 1
                 stats["wrong_words"].append({
                     "word": word,
-                    "suggestions": [self.error_dict[word]["correct"]],
+                    "suggestions": self.error_dict[word], # ส่ง List คำแนะนำออกไปเลย
                     "source": "error_dict"
                 })
                 continue
