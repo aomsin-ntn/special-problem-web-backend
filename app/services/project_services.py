@@ -25,6 +25,11 @@ class ProjectServices:
         return custom_dict
 
     @staticmethod
+    async def get_dictionary_report(db: Session, table_type: str, page: int, limit: int, sorted_by: str, order: str):
+        report = await ProjectRepository.get_dictionary_report(db, table_type, page, limit, sorted_by, order)
+        return report
+    
+    @staticmethod
     async def delete_project(db: Session, project_id: int, user_id: UUID):
         has_permission = await ProjectServices.check_edit_permission(db, project_id, user_id)
         if not has_permission:

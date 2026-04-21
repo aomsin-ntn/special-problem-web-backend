@@ -13,12 +13,19 @@ class SpellServices:
         self.spell_cache = {}
         self.error_dict = {}
         if error_dict:
-            for item in error_dict:
-                wrong = item[0]
-                correct = item[1]
+            # สมมติ item คือ [wrong, correct]
+            for wrong, correct in error_dict:
                 self.error_dict[wrong] = {"correct": correct}
+                
+        # เก็บไว้ใช้กับ deepcut.tokenize
         self.custom_segmentation_dict = list(set(custom_dict)) if custom_dict else []
+        
+        # รวมคำเฉพาะทางเข้ากับ Dictionary ภาษาไทยมาตรฐาน
         self.thai_dict = set(thai_words())
+        if custom_dict:
+            # อัปเดตไทยดิคด้วยคำเฉพาะทาง เพื่อให้ถือว่าเป็นคำที่ 'ถูก' (Priority 2)
+            self.thai_dict.update(self.custom_segmentation_dict)
+            
         self.eng_dict = set(top_n_list("en", 50000))
 
     def clean_text(self, text: str) -> str:

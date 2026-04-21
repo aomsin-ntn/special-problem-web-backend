@@ -4,6 +4,7 @@ from app.models.advisor import Advisor
 from app.models.correction_dictionary import CorrectionDictionary
 from app.models.incorrect_word import IncorrectWord
 from app.schemas.project_schema import ProjectSubmitRequest
+from sqlmodel import select
 
 from app.services.file_services import FileServices
 from app.services.ocr_services import OCRServices
@@ -195,7 +196,7 @@ class UploadServices:
                     
                     if incorrect and correct:
                         # 1. ค้นหาใน CorrectionDictionary ว่ามีคำผิดนี้อยู่หรือยัง
-                        existing_dic = await db.query(CorrectionDictionary).filter_by(incorrect_word=incorrect).first()
+                        existing_dic = await db.exec(select(CorrectionDictionary).where(CorrectionDictionary.incorrect_word == incorrect)).first()
                         
                         if existing_dic:
                             # ถ้ามีแล้ว ให้บวก Count และเช็คว่าคำที่ถูกนี้อยู่ในลิสต์หรือยัง
@@ -219,9 +220,10 @@ class UploadServices:
                             existing_dic = new_dic
 
                         # 2. บันทึกลงตารางย่อย IncorrectWord เพื่อเก็บสถิติว่าคำนี้ถูกแก้เป็นอะไรบ่อยที่สุด
-                        inc_word_record = await db.query(IncorrectWord).filter_by(
-                            word_dic_id=existing_dic.word_dic_id, 
-                            correct_word=correct
+                        inc_word_record =  db.exec(select(IncorrectWord).where(
+                                IncorrectWord.word_dic_id == existing_dic.word_dic_id,
+                                IncorrectWord.correct_word == correct
+                            )
                         ).first()
 
                         if inc_word_record:
@@ -232,6 +234,7 @@ class UploadServices:
                                 correct_word=correct,
                                 count=1
                             ))
+        db.flush() # บังคับเคลียร์การเปลี่ยนแปลงใน CorrectionDictionary และ IncorrectWord ลง DB ก่อนที่จะดำเนินการต่อไปกับ Project
         db.commit()
         try:
             # 1. สั่งระงับ Autoflush ตลอดการทำงานในบล็อกนี้ ป้องกันระบบแทรกคิว
@@ -371,7 +374,7 @@ class UploadServices:
         
     @staticmethod
     async def save_update_project_data(project_id: str, data: ProjectSubmitRequest, db, current_user):
-        from sqlmodel import select
+
         
         # 1. ดึงโปรเจกต์จาก Database เป็น Object (ORM) ตรงๆ ไม่ใช่ List
         project = db.exec(select(Project).where(Project.project_id == project_id)).first()
