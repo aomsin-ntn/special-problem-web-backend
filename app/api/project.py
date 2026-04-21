@@ -13,6 +13,7 @@ from datetime import datetime
 # Database & Auth
 from app.database import get_db
 from app.api.authentication import get_current_user
+from app.api.authentication import require_role
 
 # Services
 from app.services.upload_services import UploadServices
@@ -240,19 +241,11 @@ async def delete_project(
 
 
 # --- 4. Reports & Staff Only (Admin) ---   
-def require_staff_or_professor(current_user: User = Depends(get_current_user)):
-    if current_user.role not in [Role.STAFF, Role.PROFESSOR]:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="เฉพาะ Staff และ Professor เท่านั้นที่สามารถเข้าถึงหน้ารายงานได้"
-        )
-    return current_user
-
 @router.get("/report")
 async def get_projects_report(
     db: Annotated[Session, Depends(get_db)],
     request: Annotated[GetProjectRequestParams, Query()],
-    authorized_user: User = Depends(require_staff_or_professor)
+    authorized_user: User = Depends(require_role([Role.STAFF]))
 ):
     try:
         # ใช้ Logic การดึงข้อมูลเดิมจาก Repository ได้เลย
@@ -273,7 +266,7 @@ async def get_dictionary_report_api(
     limit: int = Query(20, ge=1),
     sorted_by: str = Query(None),
     order: str = Query("desc"),
-    authorized_user: User = Depends(require_staff_or_professor)
+    authorized_user: User = Depends(require_role([Role.STAFF]))
 ):
     try:
         result = await ProjectServices.get_dictionary_report(db, table_type, page, limit, sorted_by, order)

@@ -3,7 +3,7 @@ from fastapi import APIRouter, Request, Response, Depends
 from app.database import get_db
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.exc import SQLAlchemyError 
-from typing import Annotated
+from typing import Annotated, List, Union
 from app.models.user import User, Role
 from app.models.session import Session
 from uuid import uuid4
@@ -51,7 +51,23 @@ async def get_current_user(request: Request, db: Annotated[AsyncSession, Depends
         raise
     except SQLAlchemyError:
         raise HTTPException(status_code=500, detail="Database connection error")
+    
+def require_role(allowed_roles: Union[Role, List[Role]]):
+    # ตรวจสอบว่าถ้าส่งมาเป็น Role เดียว ให้เปลี่ยนเป็น List เพื่อใช้เช็ค 'in' ได้
+    if isinstance(allowed_roles, Role):
+        allowed_roles = [allowed_roles]
 
+    def role_verifier(current_user: User = Depends(get_current_user)):
+        # เช็คว่า Role ของ user อยู่ในกลุ่มที่อนุญาตหรือไม่
+        if current_user.role not in allowed_roles:
+            role_names = [r.value for r in allowed_roles]
+            raise HTTPException(
+                status_code=403,
+                detail=f"เฉพาะกลุ่มผู้ใช้ {role_names} เท่านั้นที่สามารถเข้าถึงได้"
+            )
+        return current_user
+    
+    return role_verifier
 
 # --- 2. GOOGLE OAUTH FLOW ---
 @router.get("/login")
@@ -67,17 +83,22 @@ async def callback(db: Annotated[AsyncSession, Depends(get_db)], request: Reques
     try:
         token = await oauth.google.authorize_access_token(request)
         user_info = token.get("userinfo")
-        print("User Info:", user_info)
         user_email = user_info.get("email")
         
         user = db.query(User).filter(User.email == user_email).first()
         frontend_url = "http://localhost:5173/"
 
-        if not user:
+        local_part = user_email.split('@')[0]
+
+        if not user or user.last_login_at is None:
             signup_token = signup_serializer.dumps({"email": user_email}, salt=SIGNUP_TOKEN_SALT)
-            first_login_url = f"{frontend_url}first-login?token={quote(signup_token)}"
-            print(first_login_url)
-            return RedirectResponse(url=first_login_url)
+
+            if local_part.isdigit():
+                target_url = f"{frontend_url}first-login/student?token={signup_token}"
+            else:
+                target_url = f"{frontend_url}first-login/staff?token={signup_token}"
+                
+            return RedirectResponse(url=target_url)
 
         
         session = Session(
@@ -85,6 +106,8 @@ async def callback(db: Annotated[AsyncSession, Depends(get_db)], request: Reques
             user_id=user.user_id,
             expires_at=datetime.utcnow() + timedelta(days=7)  # กำหนดเวลาหมดอายุของ session
         )
+        user.last_login_at = datetime.utcnow() # อัปเดตเวลาล่าสุดที่ผู้ใช้ล็อกอิน
+        db.add(user)  # บันทึกการอัปเดตเวลาล็อกอิน
         db.add(session)
         db.commit()
 
