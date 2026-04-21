@@ -1,3 +1,5 @@
+from dataclasses import fields
+
 from app.services.file_services import FileServices
 from app.services.ocr_services import OCRServices
 from app.services.text_services import TextServices
@@ -14,6 +16,13 @@ class UploadServices:
         self.ocr_services = OCRServices(poppler_path=settings.poppler_path)
         self.text_services = TextServices()
 
+    @staticmethod
+    def get_val(item, attr, default=None):
+        """Helper function สำหรับดึงค่าจากทั้ง Dict และ Object อย่างปลอดภัย"""
+        if item is None: return default
+        if isinstance(item, dict):
+            return item.get(attr, default)
+        return getattr(item, attr, default)
 
     async def handle_upload(self, file, pages, db, current_user):
         # save file
@@ -37,30 +46,28 @@ class UploadServices:
 
         # process text
         fields, spell_res = await self.text_services.process(raw_ocr_results, db)
+        print(fields.get("students", []))  # Debug: แสดงข้อมูลนักศึกษาที่ ExtractServices ดึงมาได้
         
         # get Master Data
         degrees = await ProjectServices.get_master_degrees(db)
         advisors = await ProjectServices.get_master_advisors(db)
         departments = await ProjectServices.get_master_departments(db)
         faculties = await ProjectServices.get_master_faculties(db)
-        keywords = await ProjectServices.get_keywords(db)
         
         # Matching Metadata (Degree, Dept, Faculty)
-        metadata_mappings = [
-            ("degree", degrees, "degree_name"),
-            ("department", departments, "department_name"),
-            ("faculty", faculties, "faculty_name")
-        ]
-
+        metadata_keys = ["degree", "department", "faculty"]
         matched_metadata = {}
-        for key, collection, field_name in metadata_mappings:
+        for key in metadata_keys:
             matched_metadata[key] = ProjectServices.find_match(
                 fields.get(f"{key}_th", ""),
                 fields.get(f"{key}_en", ""),
-                collection,
-                f"{field_name}_th",
-                f"{field_name}_en"
-            ) 
+                degrees if key == "degree" else (departments if key == "department" else faculties),
+                f"{key}_name_th",
+                f"{key}_name_en"
+            )
+
+        print(f"Raw {metadata_keys[0].capitalize()}: {fields.get(f'{metadata_keys[0]}_th', '')} / {fields.get(f'{metadata_keys[0]}_en', '')}")  # Debug: แสดงค่าที่ ExtractServices ดึงมาได้
+        print(f"Matched {metadata_keys[0].capitalize()}: {matched_metadata[metadata_keys[0]]}")  # Debug: แสดงผลการจับคู่ Metadata
 
         advisors_list = fields.get("advisors", [])  # ค่าจาก ExtractServices.extract_advisors
         extracted_advisors = []
@@ -81,19 +88,30 @@ class UploadServices:
         # จัดเตรียมข้อมูล Keyword ส่งให้หน้าบ้าน (แบบจับคู่ลำดับอย่างเดียว)
         keywords_th = fields.get("keywords_th", [])
         keywords_en = fields.get("keywords_en", [])
+        
+        master_keywords = await ProjectServices.get_keywords(db)
+
         extracted_keywords = []
+
 
         # ใช้ zip_longest เพื่อจับคู่คำต่อคำตามลำดับที่เจอ
         # ถ้าไทยมี 3 คำ อังกฤษมี 5 คำ คำที่เกินมาของไทยจะเป็น ""
         for kw_th, kw_en in zip_longest(keywords_th, keywords_en, fillvalue=""):
+            # ลองหาว่า Keyword คู่นี้มีอยู่ใน DB หรือไม่
+            matched_kw = ProjectServices.find_match(
+                kw_th.strip(), 
+                kw_en.strip(), 
+                master_keywords, 
+                "keyword_text_th", 
+                "keyword_text_en"
+            )
+            
             extracted_keywords.append({
-                "keyword_id": None,             # ส่งเป็น None ไปก่อนเพื่อให้หน้าบ้านจัดการ
-                "keyword_text_th": kw_th.strip(),
-                "keyword_text_en": kw_en.strip()
+                # ถ้าเจอใน DB ให้เอา ID มา ถ้าไม่เจอให้เป็น None (เพื่อรอ Insert ใหม่)
+                "keyword_id": self.get_val(matched_kw, "keyword_id"), 
+                "keyword_text_th": self.get_val(matched_kw, "keyword_text_th", kw_th.strip()),
+                "keyword_text_en": self.get_val(matched_kw, "keyword_text_en", kw_en.strip())
             })
-
-        # แทนที่ค่าเดิมใน fields ด้วย List ของคู่คำ
-        fields["keywords"] = extracted_keywords
 
         # จัดเตรียมข้อมูล Student ส่งให้หน้าบ้าน
         students_data = fields.get("students", []) # คีย์ควรเป็นตัวเล็กตามที่เขียนใน ExtractServices
@@ -124,19 +142,21 @@ class UploadServices:
 
                 # จัดกลุ่มเป็นก้อน โดยอ้างอิง Key ให้ถูกต้อง
                 "degree": {
-                    "degree_id": matched_metadata["degree"].degree_id if matched_metadata.get("degree") else None,
-                    "degree_name_th": matched_metadata["degree"].degree_name_th if matched_metadata.get("degree") else fields.get("degree_th", ""),
-                    "degree_name_en": matched_metadata["degree"].degree_name_en if matched_metadata.get("degree") else fields.get("degree_en", "")
+                    "degree_id": self.get_val(matched_metadata["degree"], "degree_id"),
+                    "degree_name_th": self.get_val(matched_metadata["degree"], "degree_name_th", fields.get("degree_th", "")),
+                    "degree_name_en": self.get_val(matched_metadata["degree"], "degree_name_en", fields.get("degree_en", ""))
                 },
                 "department": {
-                    "department_id": matched_metadata["department"].department_id if matched_metadata.get("department") else None,
+                    "department_id": self.get_val(matched_metadata["department"], "department_id"),
+                    "department_name_th": self.get_val(matched_metadata["department"], "department_name_th", fields.get("department_th", "")),
+                    "department_name_en": self.get_val(matched_metadata["department"], "department_name_en", fields.get("department_en", "")),
                     "department_name_th": matched_metadata["department"].department_name_th if matched_metadata.get("department") else fields.get("department_th", ""),
                     "department_name_en": matched_metadata["department"].department_name_en if matched_metadata.get("department") else fields.get("department_en", "")
                 },
                 "faculty": {
-                    "faculty_id": matched_metadata["faculty"].faculty_id if matched_metadata.get("faculty") else None,
-                    "faculty_name_th": matched_metadata["faculty"].faculty_name_th if matched_metadata.get("faculty") else fields.get("faculty_th", ""),
-                    "faculty_name_en": matched_metadata["faculty"].faculty_name_en if matched_metadata.get("faculty") else fields.get("faculty_en", "")
+                    "faculty_id": self.get_val(matched_metadata["faculty"], "faculty_id"),
+                    "faculty_name_th": self.get_val(matched_metadata["faculty"], "faculty_name_th", fields.get("faculty_th", "")),
+                    "faculty_name_en": self.get_val(matched_metadata["faculty"], "faculty_name_en", fields.get("faculty_en", ""))
                 },
                 "advisors": extracted_advisors,
                 "students": extracted_students,

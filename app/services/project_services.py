@@ -179,10 +179,11 @@ class ProjectServices:
     def find_match(target_th, target_en, items, th_attr, en_attr):
         def normalize(text):
             if not text: return ""
-            text = text.lower()
-            # OCR fix: เปลี่ยนตัวเลขเป็นตัวอักษรที่มักอ่านผิด
-            text = text.replace("0", "o").replace("1", "l").replace("5", "s")
-            # ลบอักขระพิเศษและช่องว่าง
+            # แปลงเป็นตัวพิมพ์เล็ก
+            text = str(text).lower()
+            # OCR fix: จัดการตัวเลขและตัวอักษรที่มักสับสน (Normalize กลับเป็นตัวเลขเพื่อความแม่นยำ)
+            text = text.replace("o", "0").replace("l", "1").replace("s", "5")
+            # ลบอักขระพิเศษและช่องว่าง (คงเหลือแค่ตัวอักษรไทย อังกฤษ และตัวเลข)
             text = re.sub(r'[^\w\u0E00-\u0E7F]', '', text) 
             return text
 
@@ -192,26 +193,46 @@ class ProjectServices:
         best_match = None
         highest_score = 0
 
-        for item in items:
-            db_th = normalize(getattr(item, th_attr, ""))
-            db_en = normalize(getattr(item, en_attr, ""))
+        if not items:
+            return None
 
-            # คำนวณความใกล้เคียง (0.0 - 1.0)
+        for item in items:
+            # --- FIX: รองรับทั้ง Dictionary (Degree) และ Object (Faculty/Dept) ---
+            if isinstance(item, dict):
+                raw_db_th = item.get(th_attr, "")
+                raw_db_en = item.get(en_attr, "")
+            else:
+                raw_db_th = getattr(item, th_attr, "")
+                raw_db_en = getattr(item, en_attr, "")
+
+            db_th = normalize(raw_db_th)
+            db_en = normalize(raw_db_en)
+
+            # 1. คำนวณความใกล้เคียง (SequenceMatcher)
             score_th = difflib.SequenceMatcher(None, norm_target_th, db_th).ratio() if norm_target_th and db_th else 0
             score_en = difflib.SequenceMatcher(None, norm_target_en, db_en).ratio() if norm_target_en and db_en else 0
             
-            # ใช้คะแนนที่สูงที่สุดจากทั้งสองภาษา
             current_score = max(score_th, score_en)
 
-            # เพิ่มกรณีพิเศษ: ถ้าชื่อที่ OCR อ่านได้ "เป็นส่วนหนึ่ง" ของชื่อใน DB (เช่น วิทยาศาสตรบัณฑิต)
-            if norm_target_th and norm_target_th in db_th:
-                current_score = max(current_score, 0.8) # ให้คะแนนสูงเป็นพิเศษ
+            # 2. กรณี Exact Match (หลัง Normalize) ให้คะแนนเต็มทันที
+            if (norm_target_th and norm_target_th == db_th) or (norm_target_en and norm_target_en == db_en):
+                current_score = 1.0
 
+            # 3. กรณี "เป็นส่วนหนึ่งของกันและกัน" (Partial Match)
+            # เช่น OCR อ่านได้ "วิศวกรรมศาสตร" แต่ DB คือ "วิศวกรรมศาสตรบัณฑิต"
+            elif (norm_target_th and norm_target_th in db_th) or (db_th and db_th in norm_target_th):
+                current_score = max(current_score, 0.85)
+            
+            elif (norm_target_en and norm_target_en in db_en) or (db_en and db_en in norm_target_en):
+                current_score = max(current_score, 0.85)
+
+            # บันทึกค่าที่ดีที่สุด
             if current_score > highest_score:
                 highest_score = current_score
                 best_match = item
 
-        # คืนค่าเฉพาะถ้ามีความมั่นใจเกิน 0.6 (ปรับเปลี่ยนได้ตามความเหมาะสม)
+        # คืนค่าถ้าความมั่นใจเกิน 0.6
+        print(f"[Match Debug] Best Score: {highest_score:.2f} for '{target_th or target_en}'")
         return best_match if highest_score > 0.6 else None
     
     @staticmethod

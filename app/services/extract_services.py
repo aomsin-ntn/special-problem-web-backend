@@ -1,34 +1,36 @@
 import re
 
 class ExtractServices:
-    # 1. STOP_ALL: กำแพงกั้นแบบ Simple ตัดเครื่องหมายซับซ้อนออกเพื่อความเสถียร
+    # 1. STOP_GENERAL: กำแพงกั้นแบบ Simple ตัดเครื่องหมายซับซ้อนออกเพื่อความเสถียร
     # ลบพวก .* หรือเงื่อนไขที่ซ้อนกันเยอะๆ ออก เพื่อป้องกัน Regex Error
-    STOP_ALL = r'(?:ชื่อนักศึกษา|ชื่อผู้จัดทำ|ผู้จัดทำ|Students?|ปริญญา|ภาควิชา|คณะ|มหาวิทยาลัย|มหาวิทลัย|ปีการศึกษา|อาจารย์|บทคัดย่อ|คำสำคัญ|Degree|Department|Faculty|School|University|Academic|Advisor|Abstr?act|Keywords?|Title|\||$)'
+    STOP_GENERAL = r'(?:ชื่อนักศึกษา|ชื่อผู้จัดทำ|ผู้จัดทำ|Students?|ปริญญา|ภาควิชา|คณะ|มหาวิทยาลัย|มหาวิทลัย|ปีการศึกษา|อาจารย์|บทคัดย่อ|คำสำคัญ|Degree|Department|Faculty|School|University|Academic|Advisor|Abstr?act|Keywords?|Title|\||$)'
 
     STOP_TITLE = r'(?:ชื่อนักศึกษา|ชื่อผู้จัดทำ|ผู้จัดทำ|Students?|โดย|By|เสนอโดย|\||$)'
 
+    STOP_ABSTRACT = r'(?:คำสำคัญ|Keywords?|Keywors|หัวข้อ|Title|\||$)'
+
     TH_PATTERNS = {
         "title_th": r'(?:หัวข้อ\s*(?:โครงงาน|ปัญหา|สหกิจ)พิเศษ|หัวข้อ|เรื่อง|โครงการสหกิจศึกษา|สหกิจศึกษา|โครงการ)[:\s]*(.*?)(?=' + STOP_TITLE + ')',
-        "degree_th": r'ปริญญา[:\s]*(.*?)(?=' + STOP_ALL + ')',
-        "department_th": r'ภาควิชา[:\s]*(.*?)(?=' + STOP_ALL + ')',
-        "faculty_th": r'(?:คณะ|คญะ)[:\s]*(.*?)(?=' + STOP_ALL + ')',
-        "university_th": r'(?:มหาวิทยาลัย|มหาวิทลัย)[:\s]*(.*?)(?=' + STOP_ALL + ')',
-        "year_th": r'ปีการศึกษา[:\s]*(.*?)(?=' + STOP_ALL + ')',
-        "advisor_th": r'(?:อาจารย์.{0,2}ที่ปรึกษา|คณะกรรมการ.{0,2}ที่ปรึกษา)[:\s]*(.*?)(?=' + STOP_ALL + ')',
-        "abstract_th": r'บทคัดย่อ[:\s]*(.*?)(?=' + STOP_ALL + ')',
-        "keywords_th": r'คำสำคัญ[:\s]*(.*?)(?=' + STOP_ALL + ')'
+        "degree_th": r'ปริญญา[:\s]*(.*?)(?=' + STOP_GENERAL + ')',
+        "department_th": r'ภาควิชา[:\s]*(.*?)(?=' + STOP_GENERAL + ')',
+        "faculty_th": r'(?:คณะ|คญะ)[:\s]*(.*?)(?=' + STOP_GENERAL + ')',
+        "university_th": r'(?:มหาวิทยาลัย|มหาวิทลัย)[:\s]*(.*?)(?=' + STOP_GENERAL + ')',
+        "year_th": r'ปีการศึกษา[:\s]*(.*?)(?=' + STOP_GENERAL + ')',
+        "advisor_th": r'(?:อาจารย์.{0,2}ที่ปรึกษา|คณะกรรมการ.{0,2}ที่ปรึกษา)[:\s]*(.*?)(?=' + STOP_GENERAL + ')',
+        "abstract_th": r'บทคัดย่อ[:\s]*(.*?)(?=' + STOP_ABSTRACT + ')',
+        "keywords_th": r'คำสำคัญ[:\s]*(.*?)(?=' + STOP_GENERAL + ')'
     }
 
     EN_PATTERNS = {
         "title_en": r'(?:Title|title)[:\s]*(.*?)(?=' + STOP_TITLE + ')',
-        "degree_en": r'Degree[:\s]*(.*?)(?=' + STOP_ALL + ')',
-        "department_en": r'Department[:\s]*(.*?)(?=' + STOP_ALL + ')',
-        "faculty_en": r'(?:Faculty|School)[:\s]*(.*?)(?=' + STOP_ALL + ')',
-        "university_en": r'University[:\s]*(.*?)(?=' + STOP_ALL + ')',
-        "year_en": r'(?:Academic\s*Year|AcademicYear)[:\s]*(.*?)(?=' + STOP_ALL + ')',
-        "advisor_en": r'Advisor[:\s]*(.*?)(?=\bAbstr?act\b|\bAbstact\b|' + STOP_ALL + ')',
-        "abstract_en": r'(?:Abstr?act|Abstact)[:\s]*(.*?)(?=' + STOP_ALL + ')',
-        "keywords_en": r'(?:Keywords?|Keywors)[:\s]*(.*?)(?=' + STOP_ALL + ')'
+        "degree_en": r'Degree[:\s]*(.*?)(?=' + STOP_GENERAL + ')',
+        "department_en": r'Department[:\s]*(.*?)(?=' + STOP_GENERAL + ')',
+        "faculty_en": r'(?:Faculty|School)[:\s]*(.*?)(?=' + STOP_GENERAL + ')',
+        "university_en": r'University[:\s]*(.*?)(?=' + STOP_GENERAL + ')',
+        "year_en": r'(?:Academic\s*Year|AcademicYear)[:\s]*(.*?)(?=' + STOP_GENERAL + ')',
+        "advisor_en": r'Advisor[:\s]*(.*?)(?=\bAbstr?act\b|\bAbstact\b|' + STOP_GENERAL + ')',
+        "abstract_en": r'(?:Abstr?act|Abstact)[:\s]*(.*?)(?=' + STOP_ABSTRACT + ')',
+        "keywords_en": r'(?:Keywords?|Keywors)[:\s]*(.*?)(?=' + STOP_GENERAL + ')'
     }
 
     @staticmethod
@@ -62,39 +64,65 @@ class ExtractServices:
     
     @staticmethod
     def extract_students(text: str):
-        print("\n--- Debugging Student Extraction ---")
-        th_pattern = r'(นาย|นางสาว|นาง)\s*([ก-๙\sฺ]{2,50}?)\s*(?:รหัสนักศึกษา|รหัส|student\s*id|student\s*d)?\s*[:\-\s]*(\d[O0-9Il\s]{7,12})'
-        th_data = re.findall(th_pattern, text, re.IGNORECASE)
-        print(f"  [Student] Found {len(th_data)} Thai student patterns.")
-        
-        en_map = {}
-        en_pattern = r'(?:miss\.?|mr\.?|mrs\.?|miss|mr|mrs)?\s*([a-z\s\.]{5,50}?)\s*(?:รหัสนักศึกษา|รหัส|student\s*id|student\s*d|students?|id)?\s*[:\-\s]*(\d[O0-9Il\s]{7,12})'
-        en_candidates = re.findall(en_pattern, text, re.IGNORECASE)
-        
-        for name, rid in en_candidates:
-            clean_id = ExtractServices._normalize_id(rid)
-            clean_name = ExtractServices._clean_text(name)
-            if clean_id and clean_name:
-                en_map[clean_id] = clean_name
+        print("\n--- Debugging Student Extraction (FIXED) ---")
 
-        results = []
-        for p, n, rid in th_data:
+        # -----------------------------
+        # 1. Thai students
+        # -----------------------------
+        th_pattern = r'(นาย|นางสาว|นาง)\s*([ก-๙\sฺ]{2,80})\s*(?:รหัสนักศึกษา|รหัส)?\s*[:\-\s]*(\d[O0-9Il\s]{7,12})'
+        th_matches = list(re.finditer(th_pattern, text, re.IGNORECASE))
+
+        th_data = []
+        for m in th_matches:
+            prefix, name, rid = m.groups()
             sid = ExtractServices._normalize_id(rid)
-            name_th = ExtractServices._clean_text(f"{p}{n.strip()}")
-            name_en = en_map.get(sid, None)
-            print(f"  [Student] Match: {name_th} (ID: {sid})")
+            name_th = ExtractServices._clean_text(f"{prefix}{name.strip()}")
+            th_data.append({
+                "student_id": sid,
+                "student_name_th": name_th
+            })
+
+        # -----------------------------
+        # 2. English students (NEW FIX)
+        # -----------------------------
+        en_pattern = r'(mr\.?|miss\.?|mrs\.?)?\s*([a-z]+\s+[a-z]+)\s*(?:student\s*\|?d|student\s*id|id)?\s*[:\-\s]*(\d[O0-9Il\s]{7,12})'
+        en_matches = re.findall(en_pattern, text, re.IGNORECASE)
+
+        en_map = {}
+
+        for prefix, name, rid in en_matches:
+            sid = ExtractServices._normalize_id(rid)
+            name_en = ExtractServices._clean_text(name)
+
+            if name_en:
+                name_en = name_en.title()  # ทำให้เป็น Proper Case
+                en_map[sid] = name_en
+                print(f"[EN MAP] {sid} => {name_en}")
+
+        # -----------------------------
+        # 3. Merge
+        # -----------------------------
+        results = []
+
+        for th in th_data:
+            sid = th["student_id"]
+            name_en = en_map.get(sid)
+
+            print(f"[FINAL] {th['student_name_th']} | EN: {name_en}")
+
             results.append({
                 "student_id": sid,
-                "student_name_th": name_th,
+                "student_name_th": th["student_name_th"],
                 "student_name_en": name_en
             })
+
         return results
 
     @staticmethod
     def extract_advisors(text: str):
         print("--- Debugging Advisor Extraction ---")
-        th_m = re.search(r'(?:อาจารย์ที่ปรึกษา|คณะกรรมการที่ปรึกษา)[:\s]*(.*?)(?=' + ExtractServices.STOP_ALL + ')', text, re.DOTALL | re.IGNORECASE)
-        en_m = re.search(r'Advisor[:\s]*(.*?)(?=\bAbstr?act\b|\bAbstact\b|' + ExtractServices.STOP_ALL + ')', text, re.DOTALL | re.IGNORECASE)
+        th_m = re.search(r'(?:อาจารย์ที่ปรึกษา|คณะกรรมการที่ปรึกษา)[:\s]*(.*?)(?=' + ExtractServices.STOP_GENERAL + ')', text, re.DOTALL | re.IGNORECASE)
+        en_m = re.search(r'Advisor[:\s]*(.*?)(?=\bAbstr?act\b|\bAbstact\b|' + ExtractServices.STOP_GENERAL + ')', text, re.DOTALL | re.IGNORECASE)
         
         th_val = th_m.group(1).strip() if th_m else ""
         en_val = en_m.group(1).strip() if en_m else ""
@@ -134,31 +162,44 @@ class ExtractServices:
                 match = re.search(pattern, text, re.IGNORECASE | re.UNICODE | re.DOTALL)
                 
                 if match:
-                    val = match.group(1).strip()
+                    val = match.group(1)
+
+                    # 🔥 CLEAN OCR (เฉพาะ title + abstract)
+                    if "title" in field or "abstract" in field:
+                        val = re.sub(r'[\x00-\x1F\x7F]', ' ', val)
+                        val = val.replace('|', ' ')
+                        val = re.sub(r'\s+', ' ', val).strip()
+
                     if "keywords" in field:
                         val_cleaned = re.sub(r'\n', ' ', val)
                         raw_items = re.split(r'[,;]', val_cleaned)
                         final_keywords = []
+
                         for item in raw_items:
                             item = item.strip()
-                            if not item: continue
+                            if not item:
+                                continue
+
                             if re.search(r'[\u0E00-\u0E7F]', item) and ' ' in item:
-                                sub_items = re.split(r'\s{2,}', item) 
-                                if len(sub_items) == 1: sub_items = re.split(r'\s+', item)
+                                sub_items = re.split(r'\s{2,}', item)
+                                if len(sub_items) == 1:
+                                    sub_items = re.split(r'\s+', item)
+
                                 for sub in sub_items:
                                     cleaned_sub = ExtractServices._clean_text(sub)
-                                    if cleaned_sub: final_keywords.append(cleaned_sub)
+                                    if cleaned_sub:
+                                        final_keywords.append(cleaned_sub)
                             else:
                                 cleaned_item = ExtractServices._clean_text(item)
-                                if cleaned_item: final_keywords.append(cleaned_item)
-                        results[field] = list(dict.fromkeys([k for k in final_keywords if k]))
+                                if cleaned_item:
+                                    final_keywords.append(cleaned_item)
+
+                        results[field] = list(dict.fromkeys(final_keywords))
                         print(f"Done (Found {len(results[field])})")
+
                     else:
                         results[field] = ExtractServices._clean_text(val, is_title="title" in field)
-                        print(f"Done")
-                else:
-                    print("NOT FOUND")
-                    results[field] = [] if "keywords" in field else None
+                        print("Done")
             except re.error as e:
                 print(f"REGEX ERROR: {e.msg}")
                 results[field] = None
