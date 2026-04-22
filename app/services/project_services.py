@@ -254,7 +254,7 @@ class ProjectServices:
         """
         try:
             comparison_tool = TextComparisonServices()
-            fields_to_check = ["title_th", "title_en", "abstract_th", "abstract_en", "academic_year"]
+            fields_to_check = ["title_th", "title_en", "abstract_th", "abstract_en", "academic_year_be", "academic_year_ce"]
             comparison_results = {}
 
             # --- 0. เปรียบเทียบข้อมูลเพื่อเก็บ Log (OCR vs User Edit) ---

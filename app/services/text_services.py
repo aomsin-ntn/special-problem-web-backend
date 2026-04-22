@@ -43,6 +43,7 @@ class TextServices:
 
         # 3. Extract ข้อมูลจากข้อความที่กรองมาแล้ว
         fields = extract_services.extract_fields(full_text)
+        print("Debug Keywords: ", fields.get("keywords_th"), fields.get("keywords_en"))
 
         # 4. สรุปรายงานคำผิดจากฟิลด์ที่กำหนด
         report_spell_res = []
@@ -61,4 +62,4 @@ class TextServices:
                         "stats": spell_info
                     })
         
-        return fields, _res
+        return fields, report_spell_res
