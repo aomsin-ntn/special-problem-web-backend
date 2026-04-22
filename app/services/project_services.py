@@ -25,8 +25,25 @@ import re
 class ProjectServices:
     @staticmethod
     async def get_projects(db: Session, request: GetProjectRequestParams):
+        print("Debug (request):", request)
+        if request.year:
+            request.year = ProjectServices.normalize_years(request.year)
+        print("Debug (request after normalization):", request)
         projects = await ProjectRepository.get_projects(db, request)
         return projects
+    
+    @staticmethod
+    def normalize_years(years):
+        result = []
+        for y in years:
+            try:
+                y = int(y)
+                if y > 2400:
+                    y -= 543
+                result.append(str(y))  
+            except (ValueError, TypeError):
+                continue
+        return result
     
     @staticmethod
     async def get_error_dict(db: Session):
