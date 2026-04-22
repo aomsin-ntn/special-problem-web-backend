@@ -39,7 +39,7 @@ from app.repository.user_repository import UserRepository
 router = APIRouter(prefix="/project")
 
 # --- 1. Basic Fetching (Read) ---
-@router.get("/")
+@router.get("/search")
 async def get_projects(
     db: Annotated[Session, Depends(get_db)],
     request: Annotated[GetProjectRequestParams, Query()]
