@@ -43,7 +43,13 @@ class ProjectRepository:
                         Advisor.advisor_name_th.ilike(f"%{term}%"),
                         Advisor.advisor_name_en.ilike(f"%{term}%"),
                         Keyword.keyword_text_th.ilike(f"%{term}%"),
-                        Keyword.keyword_text_en.ilike(f"%{term}%")
+                        Keyword.keyword_text_en.ilike(f"%{term}%"),
+                        Department.department_name_th.ilike(f"%{term}%"),
+                        Department.department_name_en.ilike(f"%{term}%"),
+                        Faculty.faculty_name_th.ilike(f"%{term}%"),
+                        Faculty.faculty_name_en.ilike(f"%{term}%"),
+                        Degree.degree_name_th.ilike(f"%{term}%"),
+                        Degree.degree_name_en.ilike(f"%{term}%")
                     )
                 )
             filters.append(and_(*term_conditions))
@@ -51,8 +57,8 @@ class ProjectRepository:
         if request.department:
             filters.append(Department.department_id.in_(request.department))
         if request.year:
-            filters.append(Project.academic_year.in_(request.year))
-            
+            filters.append(Project.academic_year_ce.in_(request.year))
+
         if request.sorted_by:
             if request.sorted_by == "downloaded_count":
                 order_by = Project.downloaded_count.asc() if request.order == "asc" else Project.downloaded_count.desc()
@@ -65,7 +71,7 @@ class ProjectRepository:
             elif request.sorted_by == "title_th":
                 order_by = Project.title_th.asc() if request.order == "asc" else Project.title_th.desc()
             elif request.sorted_by == "academic_year":
-                order_by = Project.academic_year.asc() if request.order == "asc" else Project.academic_year.desc()
+                order_by = Project.academic_year_ce.asc() if request.order == "asc" else Project.academic_year_ce.desc()
         else:
             order_by = Project.created_at.desc()
 
