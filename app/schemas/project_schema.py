@@ -38,11 +38,11 @@ class AdvisorInput(BaseModel):
     advisor_name_en: str
 
 class ProjectSubmitRequest(BaseModel):
-    title_th: str
+    title_th: Optional[str] = None
     title_en: str
-    abstract_th: str
+    abstract_th: Optional[str] = None
     abstract_en: str
-    academic_year_be: str
+    academic_year_be: Optional[str] = None
     academic_year_ce: str
     
     degree: DegreeInput
