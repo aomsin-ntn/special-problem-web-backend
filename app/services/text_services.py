@@ -34,7 +34,7 @@ class TextServices:
                 continue
 
             # ถ้ามีทั้งคู่ ให้ใช้เมธอด compare ที่คุณเขียนไว้เพื่อเลือกอันที่ error_percent ต่ำกว่า
-            best_text, _ = spell_services.compare(ext_text, ocr_text)
+            best_text, _res = spell_services.compare(ext_text, ocr_text)
             selected_texts.append(best_text)
             # selected_texts.append(ocr_text)  # สมมติว่า ext_text ดีกว่าเสมอในตอนนี้ (คุณสามารถเปลี่ยนกลับไปใช้ compare ได้ตามต้องการ)
 
@@ -60,5 +60,5 @@ class TextServices:
                         "field": key,
                         "stats": spell_info
                     })
-
-        return fields, report_spell_res
+        
+        return fields, _res

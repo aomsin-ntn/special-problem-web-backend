@@ -471,7 +471,8 @@ class ProjectServices:
         project.title_en = data.title_en
         project.abstract_th = data.abstract_th
         project.abstract_en = data.abstract_en
-        project.academic_year = data.academic_year
+        project.academic_year_be = data.academic_year_be
+        project.academic_year_ce = data.academic_year_ce
         if data.degree and data.degree.degree_id:
             project.degree_id = data.degree.degree_id
 
