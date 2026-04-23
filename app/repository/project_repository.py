@@ -412,7 +412,7 @@ class ProjectRepository:
     @staticmethod
     async def get_custom_dict(db: Session):
         result = db.exec(
-            select(CustomDictionary)
+            select(CustomDictionary.cus_word)
         ).all()
         return result
 
