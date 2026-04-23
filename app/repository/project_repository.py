@@ -1,3 +1,5 @@
+import os
+
 from sqlmodel import Session, select,or_, and_
 from app.models.project import Project
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -49,7 +51,9 @@ class ProjectRepository:
                         Faculty.faculty_name_th.ilike(f"%{term}%"),
                         Faculty.faculty_name_en.ilike(f"%{term}%"),
                         Degree.degree_name_th.ilike(f"%{term}%"),
-                        Degree.degree_name_en.ilike(f"%{term}%")
+                        Degree.degree_name_en.ilike(f"%{term}%"),
+                        Project.academic_year_be.ilike(f"%{term}%"),
+                        Project.academic_year_ce.ilike(f"%{term}%")
                     )
                 )
             filters.append(and_(*term_conditions))
@@ -245,7 +249,7 @@ class ProjectRepository:
         return list(result.values())
     
     @staticmethod
-    async def download_projectfile(db:Session,project_id:UUID):
+    async def download_projectfile(db: Session, project_id: UUID):
         project_row = db.exec(
             select(Project, ProjectFile)
             .join(ProjectFile, Project.file_id == ProjectFile.file_id)
@@ -257,8 +261,15 @@ class ProjectRepository:
 
         project, project_file = project_row
 
+        if not project_file:
+            return None
+        
+        if not project_file.file_path or not os.path.exists(project_file.file_path):
+            return None
+
         project.downloaded_count += 1
         db.commit()
+
         return project_file
     
 
