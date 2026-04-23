@@ -102,23 +102,26 @@ async def handle_upload(
     db: Annotated[AsyncSession, Depends(get_db)],
     file: UploadFile = File(...),
     service: UploadServices = Depends(),
-    pages: list[int] = Query([1], description="Page numbers for OCR"),
+    pages: list[int] = Query([1]),
     user: User = Depends(get_current_user),
 ):
     try:
-        # เช็คก่อนว่าเป็น PDF จริงไหม
         if not file.filename.endswith(".pdf"):
             raise HTTPException(status_code=400, detail="รองรับเฉพาะไฟล์ PDF เท่านั้น")
 
         result = await service.handle_upload(file, pages=pages, db=db, current_user=user)
+
+        # 🔥 เช็คคุณภาพข้อมูลตรงนี้
+        ProjectServices.validate_extracted_data(result)
+
         return result
-        
+
     except HTTPException:
         raise
     except Exception as e:
         print(f"OCR/Upload Error: {e}")
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, 
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"เกิดข้อผิดพลาดในการอ่านไฟล์: {str(e)}"
         )
 
