@@ -98,7 +98,7 @@ class UploadServices:
         # ถ้าไทยมี 3 คำ อังกฤษมี 5 คำ คำที่เกินมาของไทยจะเป็น ""
         for kw_th, kw_en in zip_longest(keywords_th, keywords_en, fillvalue=""):
             # ลองหาว่า Keyword คู่นี้มีอยู่ใน DB หรือไม่
-            matched_kw = ProjectServices.find_match(
+            matched_kw = ProjectServices.find_match_keywords(
                 kw_th.strip(), 
                 kw_en.strip(), 
                 master_keywords, 

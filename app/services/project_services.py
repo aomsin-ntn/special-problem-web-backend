@@ -253,6 +253,66 @@ class ProjectServices:
         return best_match if highest_score > 0.6 else None
     
     @staticmethod
+    def find_match_keywords(target_th, target_en, items, th_attr, en_attr):
+        def normalize(text):
+            if not text: return ""
+            # แปลงเป็นตัวพิมพ์เล็ก
+            text = str(text).lower()
+            # OCR fix: จัดการตัวเลขและตัวอักษรที่มักสับสน (Normalize กลับเป็นตัวเลขเพื่อความแม่นยำ)
+            text = text.replace("o", "0").replace("l", "1").replace("s", "5")
+            # ลบอักขระพิเศษและช่องว่าง (คงเหลือแค่ตัวอักษรไทย อังกฤษ และตัวเลข)
+            text = re.sub(r'[^\w\u0E00-\u0E7F]', '', text) 
+            return text
+
+        norm_target_th = normalize(target_th)
+        norm_target_en = normalize(target_en)
+
+        best_match = None
+        highest_score = 0
+
+        if not items:
+            return None
+
+        for item in items:
+            # --- FIX: รองรับทั้ง Dictionary (Degree) และ Object (Faculty/Dept) ---
+            if isinstance(item, dict):
+                raw_db_th = item.get(th_attr, "")
+                raw_db_en = item.get(en_attr, "")
+            else:
+                raw_db_th = getattr(item, th_attr, "")
+                raw_db_en = getattr(item, en_attr, "")
+
+            db_th = normalize(raw_db_th)
+            db_en = normalize(raw_db_en)
+
+            # 1. คำนวณความใกล้เคียง (SequenceMatcher)
+            score_th = difflib.SequenceMatcher(None, norm_target_th, db_th).ratio() if norm_target_th and db_th else 0
+            score_en = difflib.SequenceMatcher(None, norm_target_en, db_en).ratio() if norm_target_en and db_en else 0
+            
+            current_score = max(score_th, score_en)
+
+            # 2. กรณี Exact Match (หลัง Normalize) ให้คะแนนเต็มทันที
+            if (norm_target_th and norm_target_th == db_th) or (norm_target_en and norm_target_en == db_en):
+                current_score = 1.0
+
+            # 3. กรณี "เป็นส่วนหนึ่งของกันและกัน" (Partial Match)
+            # เช่น OCR อ่านได้ "วิศวกรรมศาสตร" แต่ DB คือ "วิศวกรรมศาสตรบัณฑิต"
+            elif (norm_target_th and norm_target_th in db_th) or (db_th and db_th in norm_target_th):
+                current_score = max(current_score, 0.85)
+            
+            elif (norm_target_en and norm_target_en in db_en) or (db_en and db_en in norm_target_en):
+                current_score = max(current_score, 0.85)
+
+            # บันทึกค่าที่ดีที่สุด
+            if current_score > highest_score:
+                highest_score = current_score
+                best_match = item
+
+        # คืนค่าถ้าความมั่นใจเกิน 0.6
+        print(f"[Match Debug] Best Score: {highest_score:.2f} for '{target_th or target_en}'")
+        return best_match if highest_score > 0.9 else None
+    
+    @staticmethod
     async def check_edit_permission(db: Session, project_id: UUID, user_id: UUID) -> bool:
         is_owner = await ProjectRepository.is_project_owner(db, project_id, user_id)
         return is_owner
@@ -437,7 +497,7 @@ class ProjectServices:
                         target_kw_id = kw.keyword_id
                     else:
                         # ถ้าไม่มี ID ให้หาจาก Text Match
-                        match = ProjectServices.find_match(
+                        match = ProjectServices.find_match_keywords(
                             kw.keyword_text_th, kw.keyword_text_en, 
                             db_keywords, "keyword_text_th", "keyword_text_en"
                         )
@@ -567,3 +627,40 @@ class ProjectServices:
             raise HTTPException(status_code=500, detail="ไม่สามารถอัปเดตข้อมูลได้")
 
         return {"status": "success", "message": "อัปเดตข้อมูลสำเร็จ"}
+    
+    @staticmethod
+    def validate_extracted_data(data: dict):
+        # เลือกฟิลด์ที่ “ต้องมี”
+        required_fields = [
+            "title_th", "title_en",
+            "student_name_th", "student_name_en",
+            "advisor_name_th", "advisor_name_en",
+            "abstract_th", "abstract_en"
+        ]
+
+        total = len(required_fields)
+        empty_count = 0
+
+        for field in required_fields:
+            value = data.get(field)
+            if not value or str(value).strip() == "":
+                empty_count += 1
+
+        null_ratio = empty_count / total
+
+        # --- ตรวจภาษาอังกฤษ ---
+        text_all = " ".join([str(data.get(f, "")) for f in required_fields])
+        has_english = bool(re.search(r"[a-zA-Z]", text_all))
+
+        # --- เงื่อนไข error ---
+        if null_ratio > 0.5:
+            raise HTTPException(
+                status_code=422,
+                detail="ข้อมูลที่สกัดได้ไม่สมบูรณ์ (มีค่าว่างมากกว่า 50%)"
+            )
+
+        if not has_english:
+            raise HTTPException(
+                status_code=422,
+                detail="ไม่พบข้อมูลภาษาอังกฤษ อาจเกิดจาก OCR อ่านผิดพลาด"
+            )
