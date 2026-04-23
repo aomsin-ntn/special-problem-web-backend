@@ -110,9 +110,10 @@ async def handle_upload(
             raise HTTPException(status_code=400, detail="รองรับเฉพาะไฟล์ PDF เท่านั้น")
 
         result = await service.handle_upload(file, pages=pages, db=db, current_user=user)
+        # print(result)  # Debug: แสดงผลลัพธ์ที่ได้จากการประมวลผล
 
-        # 🔥 เช็คคุณภาพข้อมูลตรงนี้
-        ProjectServices.validate_extracted_data(result)
+        # เช็คคุณภาพข้อมูลตรงนี้
+        ProjectServices.validate_extracted_data(result["form_data"])
 
         return result
 
