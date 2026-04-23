@@ -656,39 +656,91 @@ class ProjectServices:
 
         return {"status": "success", "message": "อัปเดตข้อมูลสำเร็จ"}
     
+
     @staticmethod
     def validate_extracted_data(data: dict):
-        # เลือกฟิลด์ที่ “ต้องมี”
-        required_fields = [
-            "title_th", "title_en",
-            "student_name_th", "student_name_en",
-            "advisor_name_th", "advisor_name_en",
-            "abstract_th", "abstract_en"
-        ]
+        empty_fields = []
+        total = 4  # title, abstract, students, advisors
 
-        total = len(required_fields)
-        empty_count = 0
+        def has_text(*values):
+            return any(str(v).strip() for v in values if v is not None)
 
-        for field in required_fields:
-            value = data.get(field)
-            if not value or str(value).strip() == "":
-                empty_count += 1
+        def get_value(item, key, default=""):
+            if isinstance(item, dict):
+                return item.get(key, default)
+            return getattr(item, key, default)
 
+        # --- title ---
+        if not has_text(data.get("title_th"), data.get("title_en")):
+            empty_fields.append("title")
+
+        # --- abstract ---
+        if not has_text(data.get("abstract_th"), data.get("abstract_en")):
+            empty_fields.append("abstract")
+
+        # --- students ---
+        students = data.get("students", []) or []
+        has_students = any(
+            has_text(
+                get_value(s, "student_name_th"),
+                get_value(s, "student_name_en")
+            )
+            for s in students
+        )
+        if not has_students:
+            empty_fields.append("students")
+
+        # --- advisors ---
+        advisors = data.get("advisors", []) or []
+        has_advisors = any(
+            has_text(
+                get_value(a, "advisor_name_th"),
+                get_value(a, "advisor_name_en")
+            )
+            for a in advisors
+        )
+        if not has_advisors:
+            empty_fields.append("advisors")
+
+        empty_count = len(empty_fields)
         null_ratio = empty_count / total
 
-        # --- ตรวจภาษาอังกฤษ ---
-        text_all = " ".join([str(data.get(f, "")) for f in required_fields])
-        has_english = bool(re.search(r"[a-zA-Z]", text_all))
+        def has_eng(text):
+            return bool(re.search(r"[a-zA-Z]", str(text or "")))
 
-        # --- เงื่อนไข error ---
+        has_english = any([
+            has_eng(data.get("title_en")),
+            has_eng(data.get("abstract_en")),
+            any(has_eng(get_value(s, "student_name_en")) for s in students),
+            any(has_eng(get_value(a, "advisor_name_en")) for a in advisors),
+        ])
+
+        print("==== VALIDATION DEBUG ====")
+        print("students type:", type(students))
+        print("first student type:", type(students[0]) if students else None)
+        print("advisors type:", type(advisors))
+        print("first advisor type:", type(advisors[0]) if advisors else None)
+        print("Has students:", has_students)
+        print("Has advisors:", has_advisors)
+        print("Empty fields:", empty_fields)
+        print("Null ratio:", null_ratio)
+        print("Has English:", has_english)
+
         if null_ratio > 0.6:
             raise HTTPException(
                 status_code=422,
-                detail="ข้อมูลที่สกัดได้ไม่สมบูรณ์ (มีค่าว่างมากกว่า 60%)"
+                detail={
+                    "message": "ข้อมูลไม่สมบูรณ์",
+                    "missing_fields": empty_fields,
+                    "null_ratio": null_ratio
+                }
             )
 
         if not has_english:
             raise HTTPException(
                 status_code=422,
-                detail="ไม่พบข้อมูลภาษาอังกฤษ อาจเกิดจาก OCR อ่านผิดพลาด"
+                detail={
+                    "message": "ไม่พบข้อมูลภาษาอังกฤษ",
+                    "hint": "OCR อาจอ่านผิด หรือไม่มี field ภาษาอังกฤษเลย"
+                }
             )
