@@ -46,6 +46,7 @@ async def get_projects(
 ):
     try:
         projects = await ProjectServices.get_projects(db, request)
+        print(projects)
         return projects
     except SQLAlchemyError as e:
         print(f"DB Error: {e}")
@@ -112,9 +113,6 @@ async def handle_upload(
         result = await service.handle_upload(file, pages=pages, db=db, current_user=user)
         # print(result)  # Debug: แสดงผลลัพธ์ที่ได้จากการประมวลผล
 
-        # เช็คคุณภาพข้อมูลตรงนี้
-        ProjectServices.validate_extracted_data(result["form_data"])
-
         return result
 
     except HTTPException:
@@ -135,7 +133,10 @@ async def save_project(
 ):
     try:
         # โยนภาระไปให้ Service จัดการให้หมด
+        ProjectServices.validate_extracted_data(data.data.model_dump())
         result = await project_service.save_project_data(data.data, data.old_data, db, current_user)
+        print("----------SAVE RESULT DEBUG----------")
+        print(data)
         return result
 
     except SQLAlchemyError as db_error:

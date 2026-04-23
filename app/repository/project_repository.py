@@ -362,6 +362,13 @@ class ProjectRepository:
         return departments
 
     @staticmethod
+    async def get_master_degrees_data(db:Session):
+        degrees = db.exec(
+            select(Degree)
+        ).all()
+        return degrees
+
+    @staticmethod
     async def get_master_degrees(db:Session):
         result = db.exec(
             select(

@@ -18,11 +18,18 @@ class UploadServices:
 
     @staticmethod
     def get_val(item, attr, default=None):
-        """Helper function สำหรับดึงค่าจากทั้ง Dict และ Object อย่างปลอดภัย"""
-        if item is None: return default
+        if item is None:
+            return default
+
+        # dict
         if isinstance(item, dict):
             return item.get(attr, default)
-        return getattr(item, attr, default)
+
+        # object ที่มี attribute จริง
+        if hasattr(item, attr):
+            return getattr(item, attr)
+
+        return default
 
     async def handle_upload(self, file, pages, db, current_user):
         # save file
@@ -46,14 +53,22 @@ class UploadServices:
 
         # process text
         fields, spell_res = await self.text_services.process(raw_ocr_results, db)
-        print(fields.get("students", []))  # Debug: แสดงข้อมูลนักศึกษาที่ ExtractServices ดึงมาได้
         
         # get Master Data
-        degrees = await ProjectServices.get_master_degrees(db)
+        degrees = await ProjectServices.get_master_degrees_data(db)
         advisors = await ProjectServices.get_master_advisors(db)
         departments = await ProjectServices.get_master_departments(db)
         faculties = await ProjectServices.get_master_faculties(db)
-        
+        # print("----------Debug Master Data from DB----------")
+        # print(f"Advisors: {advisors}")
+        # print(f"Degrees: {degrees}")
+        # print(f"Departments: {departments}")
+        # print(f"Faculties: {faculties}")
+        print("----------Debug DATA ----------")
+        print(fields.get("degree_name_th", ""), fields.get("degree_name_en", ""))
+        print(fields.get("advisors_name_th", ""), fields.get("advisors_name_en", ""))
+        print(fields.get("students", []))   # Debug: แสดงค่าที่ ExtractServices ดึงมาได้สำหรับ Degree
+
         # Matching Metadata (Degree, Dept, Faculty)
         metadata_keys = ["degree", "department", "faculty"]
         matched_metadata = {}
@@ -65,9 +80,6 @@ class UploadServices:
                 f"{key}_name_th",
                 f"{key}_name_en"
             )
-
-        print(f"Raw {metadata_keys[0].capitalize()}: {fields.get(f'{metadata_keys[0]}_th', '')} / {fields.get(f'{metadata_keys[0]}_en', '')}")  # Debug: แสดงค่าที่ ExtractServices ดึงมาได้
-        print(f"Matched {metadata_keys[0].capitalize()}: {matched_metadata[metadata_keys[0]]}")  # Debug: แสดงผลการจับคู่ Metadata
 
         advisors_list = fields.get("advisors", [])  # ค่าจาก ExtractServices.extract_advisors
         extracted_advisors = []
@@ -150,8 +162,6 @@ class UploadServices:
                     "department_id": self.get_val(matched_metadata["department"], "department_id"),
                     "department_name_th": self.get_val(matched_metadata["department"], "department_name_th", fields.get("department_th", "")),
                     "department_name_en": self.get_val(matched_metadata["department"], "department_name_en", fields.get("department_en", "")),
-                    "department_name_th": matched_metadata["department"].department_name_th if matched_metadata.get("department") else fields.get("department_th", ""),
-                    "department_name_en": matched_metadata["department"].department_name_en if matched_metadata.get("department") else fields.get("department_en", "")
                 },
                 "faculty": {
                     "faculty_id": self.get_val(matched_metadata["faculty"], "faculty_id"),

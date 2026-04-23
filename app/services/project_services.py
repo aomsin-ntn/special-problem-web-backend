@@ -83,6 +83,11 @@ class ProjectServices:
     async def get_faculty(db: Session):
         faculty = await ProjectRepository.get_faculty(db)
         return faculty
+    
+    @staticmethod
+    async def get_master_degrees_data(db: Session):
+        degree = await ProjectRepository.get_master_degrees_data(db)
+        return degree
 
     @staticmethod
     async def get_master_faculties(db:Session):
@@ -191,21 +196,22 @@ class ProjectServices:
 
         final_result = list(result.values())
         return final_result
+    
+    @staticmethod
+    def normalize(text):
+        if not text: return ""
+        # แปลงเป็นตัวพิมพ์เล็ก
+        text = str(text).lower()
+        # OCR fix: จัดการตัวเลขและตัวอักษรที่มักสับสน (Normalize กลับเป็นตัวเลขเพื่อความแม่นยำ)
+        # ลบอักขระพิเศษและช่องว่าง (คงเหลือแค่ตัวอักษรไทย อังกฤษ และตัวเลข)
+        text = re.sub(r'[^\w\u0E00-\u0E7F]', '', text) 
+        return text
 
     @staticmethod
     def find_match(target_th, target_en, items, th_attr, en_attr):
-        def normalize(text):
-            if not text: return ""
-            # แปลงเป็นตัวพิมพ์เล็ก
-            text = str(text).lower()
-            # OCR fix: จัดการตัวเลขและตัวอักษรที่มักสับสน (Normalize กลับเป็นตัวเลขเพื่อความแม่นยำ)
-            text = text.replace("o", "0").replace("l", "1").replace("s", "5")
-            # ลบอักขระพิเศษและช่องว่าง (คงเหลือแค่ตัวอักษรไทย อังกฤษ และตัวเลข)
-            text = re.sub(r'[^\w\u0E00-\u0E7F]', '', text) 
-            return text
 
-        norm_target_th = normalize(target_th)
-        norm_target_en = normalize(target_en)
+        norm_target_th = ProjectServices.normalize(target_th)
+        norm_target_en = ProjectServices.normalize(target_en)
 
         best_match = None
         highest_score = 0
@@ -222,8 +228,8 @@ class ProjectServices:
                 raw_db_th = getattr(item, th_attr, "")
                 raw_db_en = getattr(item, en_attr, "")
 
-            db_th = normalize(raw_db_th)
-            db_en = normalize(raw_db_en)
+            db_th = ProjectServices.normalize(raw_db_th)
+            db_en = ProjectServices.normalize(raw_db_en)
 
             # 1. คำนวณความใกล้เคียง (SequenceMatcher)
             score_th = difflib.SequenceMatcher(None, norm_target_th, db_th).ratio() if norm_target_th and db_th else 0
@@ -254,18 +260,9 @@ class ProjectServices:
     
     @staticmethod
     def find_match_keywords(target_th, target_en, items, th_attr, en_attr):
-        def normalize(text):
-            if not text: return ""
-            # แปลงเป็นตัวพิมพ์เล็ก
-            text = str(text).lower()
-            # OCR fix: จัดการตัวเลขและตัวอักษรที่มักสับสน (Normalize กลับเป็นตัวเลขเพื่อความแม่นยำ)
-            text = text.replace("o", "0").replace("l", "1").replace("s", "5")
-            # ลบอักขระพิเศษและช่องว่าง (คงเหลือแค่ตัวอักษรไทย อังกฤษ และตัวเลข)
-            text = re.sub(r'[^\w\u0E00-\u0E7F]', '', text) 
-            return text
 
-        norm_target_th = normalize(target_th)
-        norm_target_en = normalize(target_en)
+        norm_target_th = ProjectServices.normalize(target_th)
+        norm_target_en = ProjectServices.normalize(target_en)
 
         best_match = None
         highest_score = 0
@@ -282,8 +279,8 @@ class ProjectServices:
                 raw_db_th = getattr(item, th_attr, "")
                 raw_db_en = getattr(item, en_attr, "")
 
-            db_th = normalize(raw_db_th)
-            db_en = normalize(raw_db_en)
+            db_th = ProjectServices.normalize(raw_db_th)
+            db_en = ProjectServices.normalize(raw_db_en)
 
             # 1. คำนวณความใกล้เคียง (SequenceMatcher)
             score_th = difflib.SequenceMatcher(None, norm_target_th, db_th).ratio() if norm_target_th and db_th else 0
@@ -417,7 +414,7 @@ class ProjectServices:
                         return getattr(match, id_attr) if match else None
                     return target_id
                 
-                actual_degree_id = await get_id(data.degree, ProjectServices.get_master_degrees, "degree_name_th", "degree_name_en", "degree_id")
+                actual_degree_id = await get_id(data.degree, ProjectServices.get_master_degrees_data, "degree_name_th", "degree_name_en", "degree_id")
 
                 # --- 2. บันทึกไฟล์ (ProjectFile) ---
                 project_file = ProjectFile(
@@ -710,12 +707,10 @@ class ProjectServices:
 
         has_english = any([
             has_eng(data.get("title_en")),
-            has_eng(data.get("abstract_en")),
-            any(has_eng(get_value(s, "student_name_en")) for s in students),
-            any(has_eng(get_value(a, "advisor_name_en")) for a in advisors),
+            has_eng(data.get("abstract_en"))
         ])
 
-        print("==== VALIDATION DEBUG ====")
+        print("----------VALIDATION DEBUG----------")
         print("students type:", type(students))
         print("first student type:", type(students[0]) if students else None)
         print("advisors type:", type(advisors))

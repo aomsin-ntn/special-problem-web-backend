@@ -41,6 +41,9 @@ class TextServices:
         # รวมข้อความจากหน้าที่ดีที่สุดเข้าด้วยกัน
         full_text = " | ".join(selected_texts)
 
+        print("----------Raw DATA ----------")
+        print(full_text)
+
         # 3. Extract ข้อมูลจากข้อความที่กรองมาแล้ว
         fields = extract_services.extract_fields(full_text)
         print("Debug Keywords: ", fields.get("keywords_th"), fields.get("keywords_en"))

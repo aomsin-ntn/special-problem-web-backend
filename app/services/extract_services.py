@@ -104,17 +104,18 @@ class ExtractServices:
         # -----------------------------
         results = []
 
-        for th in th_data:
-            sid = th["student_id"]
-            name_en = en_map.get(sid)
+        th_map = {item["student_id"]: item for item in th_data}
+        all_ids = set(th_map.keys()) | set(en_map.keys())
 
-            print(f"[FINAL] {th['student_name_th']} | EN: {name_en}")
-
+        for sid in all_ids:
+            th_item = th_map.get(sid, {})
             results.append({
                 "student_id": sid,
-                "student_name_th": th["student_name_th"],
-                "student_name_en": name_en
+                "student_name_th": th_item.get("student_name_th"),
+                "student_name_en": en_map.get(sid)
             })
+
+            print(f"[FINAL] SID={sid} | TH={th_item.get('student_name_th')} | EN={en_map.get(sid)}")
 
         return results
 
