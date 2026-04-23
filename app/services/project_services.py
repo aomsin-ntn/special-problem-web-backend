@@ -537,13 +537,11 @@ class ProjectServices:
         
     @staticmethod
     async def save_update_project_data(project_id: str, data: ProjectSubmitRequest, db, current_user):
-        # 1. ดึงโปรเจกต์จาก Database เป็น Object (ORM) ตรงๆ ไม่ใช่ List
         project = db.exec(select(Project).where(Project.project_id == project_id)).first()
-        
+
         if not project:
             raise HTTPException(status_code=404, detail="ไม่พบโปรเจกต์นี้")
 
-        # --- 2. อัปเดตข้อมูลทั่วไป ---
         project.title_th = data.title_th
         project.title_en = data.title_en
         project.abstract_th = data.abstract_th
@@ -553,28 +551,28 @@ class ProjectServices:
         if data.degree and data.degree.degree_id:
             project.degree_id = data.degree.degree_id
 
-        project.updated_by = current_user.user_id  # เก็บ UUID ของผู้ที่ล็อกอินอยู่ขณะนั้น
+        project.updated_by = current_user.user_id
         project.updated_at = datetime.utcnow()
 
-        # --- 3. อัปเดต Advisors (ลบของเก่า เพิ่มของใหม่) ---
-        # ลบความสัมพันธ์ Advisor เดิมออกให้หมดก่อน
-        existing_advisors = db.exec(select(ProjectAdvisor).where(ProjectAdvisor.project_id == project_id)).all()
+        existing_advisors = db.exec(
+            select(ProjectAdvisor).where(ProjectAdvisor.project_id == project_id)
+        ).all()
         for old_adv in existing_advisors:
             db.delete(old_adv)
-        db.flush() # บังคับเคลียร์ของเก่าลง DB ทันที
-        
-        # วนลูปเพิ่ม Advisor ใหม่จากก้อน JSON
+        db.flush()
+
         for idx, adv in enumerate(data.advisors, start=1):
             if adv.advisor_id:
                 db.add(ProjectAdvisor(
-                    project_id=project.project_id, 
-                    advisor_id=adv.advisor_id, 
+                    project_id=project.project_id,
+                    advisor_id=adv.advisor_id,
                     advisor_order=idx
                 ))
-        
-        # --- 4. อัปเดต Keywords (ลบของเก่า เพิ่มของใหม่) ---
-        # ลบความสัมพันธ์ Keyword เดิมที่เชื่อมกับโปรเจกต์นี้ออก
-        existing_p_keywords = db.exec(select(ProjectKeyword).where(ProjectKeyword.project_id == project_id)).all()
+
+        # --- อัปเดต Keywords ---
+        existing_p_keywords = db.exec(
+            select(ProjectKeyword).where(ProjectKeyword.project_id == project_id)
+        ).all()
         for old_pkw in existing_p_keywords:
             db.delete(old_pkw)
         db.flush()
@@ -582,28 +580,59 @@ class ProjectServices:
         db_keywords = await ProjectServices.get_keywords(db)
         used_keyword_ids = set()
 
+        def clean_text(text: str) -> str:
+            return text.strip() if text else ""
+
         for idx, kw in enumerate(data.keywords, start=1):
             target_kw_id = None
-            
-            if hasattr(kw, 'keyword_id') and kw.keyword_id:
-                target_kw_id = kw.keyword_id
-            else:
-                th_text = kw.keyword_text_th.strip() if kw.keyword_text_th else ""
-                en_text = kw.keyword_text_en.strip() if kw.keyword_text_en else ""
-                if not th_text and not en_text: continue
 
-                match = None
-                for db_kw in db_keywords:
-                    db_th = db_kw.keyword_text_th.strip() if db_kw.keyword_text_th else ""
-                    db_en = db_kw.keyword_text_en.strip() if db_kw.keyword_text_en else ""
-                    if (th_text and th_text == db_th) or (en_text and en_text == db_en):
-                        match = db_kw
-                        break
+            th_text = clean_text(getattr(kw, "keyword_text_th", ""))
+            en_text = clean_text(getattr(kw, "keyword_text_en", ""))
+
+            if not th_text and not en_text:
+                continue
+
+            incoming_kw_id = getattr(kw, "keyword_id", None)
+
+            # ถ้ามี id เดิมมา ให้ตรวจว่า text ยังตรงกับ keyword เดิมไหม
+            # ถ้าไม่ตรง ให้ถือว่า id เป็น null แล้วไปหาใหม่
+            if incoming_kw_id:
+                existing_kw = db.exec(
+                    select(Keyword).where(Keyword.keyword_id == incoming_kw_id)
+                ).first()
+
+                if existing_kw:
+                    db_th = clean_text(existing_kw.keyword_text_th)
+                    db_en = clean_text(existing_kw.keyword_text_en)
+
+                    same_th = (not th_text and not db_th) or (th_text == db_th)
+                    same_en = (not en_text and not db_en) or (en_text == db_en)
+
+                    if same_th and same_en:
+                        target_kw_id = existing_kw.keyword_id
+                    else:
+                        incoming_kw_id = None
+                else:
+                    incoming_kw_id = None
+
+            # ถ้าไม่มี id หรือ id เดิมใช้ไม่ได้แล้ว -> หา match จาก text ใหม่
+            if not target_kw_id:
+                match = ProjectServices.find_match_keywords(
+                    th_text,
+                    en_text,
+                    db_keywords,
+                    "keyword_text_th",
+                    "keyword_text_en"
+                )
 
                 if match:
                     target_kw_id = match.keyword_id
                 else:
-                    new_kw = Keyword(keyword_id=uuid4(), keyword_text_th=th_text, keyword_text_en=en_text)
+                    new_kw = Keyword(
+                        keyword_id=uuid4(),
+                        keyword_text_th=th_text,
+                        keyword_text_en=en_text
+                    )
                     db.add(new_kw)
                     db.flush()
                     target_kw_id = new_kw.keyword_id
@@ -611,13 +640,12 @@ class ProjectServices:
 
             if target_kw_id and target_kw_id not in used_keyword_ids:
                 db.add(ProjectKeyword(
-                    project_id=project.project_id, 
-                    keyword_id=target_kw_id, 
+                    project_id=project.project_id,
+                    keyword_id=target_kw_id,
                     keyword_order=idx
                 ))
                 used_keyword_ids.add(target_kw_id)
 
-        # 5. บันทึกทุกอย่างลง Database
         try:
             db.commit()
             db.refresh(project)
@@ -653,10 +681,10 @@ class ProjectServices:
         has_english = bool(re.search(r"[a-zA-Z]", text_all))
 
         # --- เงื่อนไข error ---
-        if null_ratio > 0.5:
+        if null_ratio > 0.6:
             raise HTTPException(
                 status_code=422,
-                detail="ข้อมูลที่สกัดได้ไม่สมบูรณ์ (มีค่าว่างมากกว่า 50%)"
+                detail="ข้อมูลที่สกัดได้ไม่สมบูรณ์ (มีค่าว่างมากกว่า 60%)"
             )
 
         if not has_english:
