@@ -1,3 +1,4 @@
+from datetime import datetime
 import os
 
 from sqlmodel import Session, select,or_, and_
@@ -11,18 +12,12 @@ from app.models.project_author import ProjectAuthor
 from app.models.degree import Degree
 from app.models.department import Department
 from app.models.advisor import Advisor
-from app.models.project_file import ProjectFile
 from app.models.project_advisor import ProjectAdvisor
-from app.models.project_author import ProjectAuthor
-from app.models.project_keyword import ProjectKeyword
 from app.models.degree_department import DegreeDepartment
 from app.models.faculty import Faculty
-from uuid import UUID
+from uuid import UUID, uuid4
 from app.schemas.root_schema import GetProjectRequestParams
 from sqlalchemy import func
-from app.models.incorrect_word import IncorrectWord
-from app.models.correction_dictionary import CorrectionDictionary
-from app.models.custom_dictionary import CustomDictionary
 
 class ProjectRepository:
 
@@ -249,6 +244,57 @@ class ProjectRepository:
         return list(result.values())
     
     @staticmethod
+    async def get_project_by_id(db: Session, project_id: UUID):
+        project = db.exec(
+            select(Project)
+            .where(Project.project_id == project_id, Project.is_active == True)
+        ).first()
+        return project
+    
+    @staticmethod
+    async def get_project_advisors_by_project_id(db: Session, project_id: UUID):
+        advisors = db.exec(
+            select(Advisor)
+            .join(ProjectAdvisor, Advisor.advisor_id == ProjectAdvisor.advisor_id)
+            .where(ProjectAdvisor.project_id == project_id)
+        ).all()
+        return advisors
+    
+    @staticmethod
+    async def get_project_keywords_by_project_id(db: Session, project_id: UUID):
+        keywords = db.exec(
+            select(Keyword)
+            .join(ProjectKeyword, Keyword.keyword_id == ProjectKeyword.keyword_id)
+            .where(ProjectKeyword.project_id == project_id)
+        ).all()
+        return keywords
+    
+    @staticmethod
+    async def get_keyword_by_id(db: Session, keyword_id: UUID):
+        keyword = db.exec(
+            select(Keyword)
+            .where(Keyword.keyword_id == keyword_id)
+        ).first()
+        return keyword
+    
+    @staticmethod
+    async def get_active_projects_for_duplicate_check(db: Session, year: str):
+        return db.exec(
+            select(Project).where(
+                Project.is_active == True,
+                Project.academic_year_ce == year
+            )
+        ).all()
+    
+    @staticmethod
+    async def get_project_students(db: Session, project_id: UUID):
+        return db.exec(
+            select(ProjectAuthor, User)
+            .join(User, User.user_id == ProjectAuthor.user_id)
+            .where(ProjectAuthor.project_id == project_id)
+        ).all()
+    
+    @staticmethod
     async def download_projectfile(db: Session, project_id: UUID):
         project_row = db.exec(
             select(Project, ProjectFile)
@@ -272,48 +318,178 @@ class ProjectRepository:
 
         return project_file
     
-
-    # --- 2. Create, Update, Delete (CRUD) ---
     @staticmethod
-    async def create_project(db: Session, project_data: Project):
-        db.add(project_data)
-        db.commit()
-        db.refresh(project_data)
-        return project_data
+    async def get_project_file_by_hash(db: Session, file_hash: str):
+        return db.exec(
+            select(ProjectFile)
+            .join(Project, Project.file_id == ProjectFile.file_id)
+            .where(
+                ProjectFile.file_hash == file_hash,
+                Project.is_active == True
+            )
+        ).first()
     
     @staticmethod
-    async def create_project_file(db: Session, project_file: ProjectFile):
+    async def get_project_file_by_id(db: Session, file_id: UUID):
+        return db.exec(
+            select(ProjectFile)
+            .where(ProjectFile.file_id == file_id)
+        ).first()
+    
+    @staticmethod
+    async def mark_file_as_saved(db: Session, file_id: UUID):
+        project_file = db.get(ProjectFile, file_id)
+
+        if not project_file:
+            return None
+
+        project_file.status = "saved"
         db.add(project_file)
         db.commit()
         db.refresh(project_file)
+
+        return project_file
+
+    # --- 2. Create, Update, Delete (CRUD) ---
+    @staticmethod
+    async def create_project_no_commit(
+        db: Session,
+        title_th: str,
+        title_en: str,
+        abstract_th: str,
+        abstract_en: str,
+        academic_year_be: str,
+        academic_year_ce: str,
+        degree_id: UUID,
+        created_by: UUID,
+        file_id: UUID,
+    ):
+        project = Project(
+            project_id=uuid4(),
+            title_th=title_th,
+            title_en=title_en,
+            abstract_th=abstract_th,
+            abstract_en=abstract_en,
+            academic_year_be=academic_year_be,
+            academic_year_ce=academic_year_ce,
+            degree_id=degree_id,
+            created_by=created_by,
+            is_active=True,
+            file_id=file_id,
+            downloaded_count=0,
+            )
+        db.add(project)
+        db.flush()
+        return project
+    
+
+    @staticmethod
+    async def create_project_file(
+        db: Session,
+        file_name: str,
+        file_path: str,
+        file_hash: str,
+        thumbnail_path: str
+    ):
+        project_file = ProjectFile(
+            file_id=uuid4(),
+            file_name=file_name,
+            file_path=file_path,
+            file_hash=file_hash,
+            thumbnail_path=thumbnail_path,
+            uploaded_at=datetime.utcnow(),
+            status="temp"
+        )
+
+        db.add(project_file)
+        db.commit()
+        db.refresh(project_file)
+
+        return project_file
+
+    @staticmethod
+    async def create_project_file_no_commit(
+        db: Session,
+        file_name: str,
+        file_path: str,
+        file_hash: str,
+        thumbnail_path: str | None = None
+    ):
+        project_file = ProjectFile(
+            file_id=uuid4(),
+            file_name=file_name,
+            file_path=file_path,
+            file_hash=file_hash,
+            thumbnail_path=thumbnail_path,
+            uploaded_at=datetime.utcnow()
+        )
+
+        db.add(project_file)
+        db.flush()
+
         return project_file
     
     @staticmethod
-    async def create_project_author(db: Session, project_author: ProjectAuthor):
+    async def add_project_author_no_commit(
+        db: Session,
+        project_id: UUID,
+        user_id: UUID,
+        author_order: int
+    ):
+        project_author = ProjectAuthor(
+            project_id=project_id,
+            user_id=user_id,
+            author_order=author_order
+        )
+
         db.add(project_author)
-        db.commit()
-        db.refresh(project_author)
         return project_author
     
     @staticmethod
-    async def create_project_advisor(db: Session, project_advisor: ProjectAdvisor):
+    async def add_project_advisor_no_commit(
+        db: Session,
+        project_id: UUID,
+        advisor_id: UUID, 
+        advisor_order: int
+    ):
+        project_advisor = ProjectAdvisor(
+            project_id=project_id,
+            advisor_id=advisor_id,
+            advisor_order=advisor_order
+        )
         db.add(project_advisor)
-        db.commit()
-        db.refresh(project_advisor)
         return project_advisor
     
     @staticmethod
-    async def create_keyword(db: Session, keyword: Keyword):
+    async def create_keyword_no_commit(
+        db: Session, 
+        th_text: str, 
+        en_text: str
+    ):
+        keyword = Keyword(
+            keyword_id=uuid4(),
+            keyword_text_th=th_text,
+            keyword_text_en=en_text
+        )
+
         db.add(keyword)
-        db.commit()
-        db.refresh(keyword)
+        db.flush()
         return keyword
     
     @staticmethod
-    async def create_project_keyword(db: Session, project_keyword: ProjectKeyword):
+    async def add_project_keyword_no_commit(
+        db: Session,
+        project_id: UUID,
+        keyword_id: UUID,
+        keyword_order: int
+    ):
+        project_keyword = ProjectKeyword(
+            project_id=project_id,
+            keyword_id=keyword_id,
+            keyword_order=keyword_order
+        )
+
         db.add(project_keyword)
-        db.commit()
-        db.refresh(project_keyword)
         return project_keyword
     
     @staticmethod
@@ -331,67 +507,44 @@ class ProjectRepository:
         return project
     
     @staticmethod
+    async def delete_project_advisors_no_commit(db: Session, project_id: UUID):
+        advisors = await ProjectRepository.get_project_advisors_by_project_id(db, project_id)
+
+        for advisor in advisors:
+            db.delete(advisor)
+
+        db.flush()
+
+    @staticmethod
+    async def delete_project_keywords_no_commit(db: Session, project_id: UUID):
+        project_keywords = await ProjectRepository.get_project_keywords_by_project_id(db, project_id)
+
+        for project_keyword in project_keywords:
+            db.delete(project_keyword)
+
+        db.flush()
+
+    @staticmethod
+    async def get_expired_temp_files(db: Session, expired_time: datetime):
+        return db.exec(
+            select(ProjectFile).where(
+                ProjectFile.status == "temp",
+                ProjectFile.uploaded_at < expired_time
+            )
+        ).all()
+
+    @staticmethod
+    async def delete_file_record(db: Session, file: ProjectFile):
+        db.delete(file)
+
+    @staticmethod
     async def is_project_owner(db: Session, project_id: UUID, user_id: UUID) -> bool:
         owner = db.exec(
             select(ProjectAuthor)
             .where(ProjectAuthor.project_id == project_id, ProjectAuthor.user_id == user_id)
         ).first()
         return owner is not None
-    
 
-    # --- 3. Master Data (Metadata for Forms) ---
-    @staticmethod
-    async def get_master_faculties(db:Session):
-        faculty = db.exec(
-            select(Faculty)
-        ).all()
-        return faculty
-    
-    @staticmethod
-    async def get_master_advisors(db:Session):
-        advisors = db.exec(
-            select(Advisor)
-        ).all()
-        return advisors
-
-    @staticmethod
-    async def get_master_departments(db:Session):
-        departments = db.exec(
-            select(Department)
-        ).all()
-        return departments
-
-    @staticmethod
-    async def get_master_degrees_data(db:Session):
-        degrees = db.exec(
-            select(Degree)
-        ).all()
-        return degrees
-
-    @staticmethod
-    async def get_master_degrees(db:Session):
-        result = db.exec(
-            select(
-                Degree.degree_id, 
-                Degree.degree_name_th, 
-                Degree.degree_name_en, 
-                DegreeDepartment.department_id
-            )
-            .join(DegreeDepartment, Degree.degree_id == DegreeDepartment.degree_id)
-        ).all()
-        
-        return [
-            {
-                "degree_id": row.degree_id,
-                "degree_name_th": row.degree_name_th,
-                "degree_name_en": row.degree_name_en,
-                "department_id": row.department_id
-            }
-            for row in result
-        ]
-
-    
-    # --- 4. OCR Dictionary & Reports ---
     @staticmethod
     async def get_keyword_suggestions(db: Session):
         result = db.exec(
@@ -406,94 +559,6 @@ class ProjectRepository:
             select(Keyword)      
         ).all()
         return keywords  
-    
-    @staticmethod
-    async def get_error_dict(db: Session):
-        result = db.exec(
-            select(IncorrectWord,CorrectionDictionary)
-            .join(CorrectionDictionary,IncorrectWord.word_dic_id == CorrectionDictionary.word_dic_id)
-            .where(IncorrectWord.count >= 10 )
-        ).all()
-        return result
-    
-    @staticmethod
-    async def get_custom_dict(db: Session):
-        result = db.exec(
-            select(CustomDictionary.cus_word)
-        ).all()
-        return result
-
-    @staticmethod
-    async def get_dictionary_report(db: Session, table_type: str, page: int, limit: int, sorted_by: str, order: str):
-        query = None
-        model = None
-
-        # 1. เลือก Model ตาม Tab ที่กดมาจาก Frontend
-        if table_type == "incorrect":
-            model = IncorrectWord
-            #  Join เอา incorrect_word ออกมาจากตาราง CorrectionDictionary ด้วย
-            query = select(IncorrectWord, CorrectionDictionary.incorrect_word).join(
-                CorrectionDictionary, IncorrectWord.word_dic_id == CorrectionDictionary.word_dic_id
-            )
-        elif table_type == "correction":
-            model = CorrectionDictionary
-            query = select(CorrectionDictionary)
-        elif table_type == "custom":
-            model = CustomDictionary
-            query = select(CustomDictionary)
-        else:
-            return {"data": [], "metadata": {"total_items": 0, "total_pages": 1, "current_page": page, "per_page": limit}}
-
-        # 2. จัดการเรื่อง Sorting
-        if sorted_by:
-            #  ดักเงื่อนไขกรณีที่สั่ง Sort ด้วยคอลัมน์ที่เรา Join มา (incorrect_word)
-            if table_type == "incorrect" and sorted_by == "incorrect_word":
-                column = CorrectionDictionary.incorrect_word
-            else:
-                column = getattr(model, sorted_by)
-                
-            order_by_clause = column.asc() if order == "asc" else column.desc()
-            query = query.order_by(order_by_clause)
-        else:
-            if table_type == "custom":
-                query = query.order_by(CustomDictionary.cus_word.asc())
-            else:
-                query = query.order_by(model.count.desc())
-
-        # 3. จัดการเรื่อง Pagination
-        total_items = db.exec(select(func.count()).select_from(query.subquery())).one()
-        total_pages = (total_items + limit - 1) // limit
-
-        paged_data = db.exec(query.offset((page - 1) * limit).limit(limit)).all()
-
-        # 4. แปลงข้อมูลให้ส่งออกไปหน้าเว็บได้ถูกต้อง
-        result_data = []
-        for item in paged_data:
-            if table_type == "incorrect":
-                # สำหรับ incorrect มันจะคืนค่าเป็น tuple (IncorrectWord, incorrect_text)
-                inc_word_obj, incorrect_text = item
-                item_dict = inc_word_obj.model_dump()
-                item_dict["incorrect_word"] = incorrect_text # ยัดคำผิดเข้าไปใน Dictionary
-                result_data.append(item_dict)
-            else:
-                result_data.append(item.model_dump())
-
-        return {
-            "data": result_data,
-            "metadata": {
-                "total_items": total_items,
-                "total_pages": total_pages,
-                "current_page": page,
-                "per_page": limit
-            }
-        }
-
-
-    
-
-
-
-    
 
 
 

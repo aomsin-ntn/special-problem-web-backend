@@ -1,7 +1,8 @@
 from sqlalchemy.ext.asyncio import AsyncSession
+from app.models import user
 from app.models.user import User
 from sqlmodel import Session, select
-from uuid import UUID
+from uuid import UUID, uuid4
 from app.models.degree import Degree
 from app.models.department import Department
 from app.models.faculty import Faculty
@@ -9,10 +10,26 @@ from app.models.degree_department import DegreeDepartment
 
 class UserRepository:
     @staticmethod
-    async def create_user(db: Session, user: User):
+    async def create_user_no_commit(
+        db: Session, 
+        student_id: str,
+        user_name_th: str,
+        user_name_en: str,
+        degree_id: UUID,
+        role: str,
+        email: str
+    ):  
+        user = User(
+            user_id=uuid4(),
+            student_id=student_id,
+            user_name_th=user_name_th,
+            user_name_en=user_name_en,
+            degree_id=degree_id,
+            role=role,
+            email=email
+        )
         db.add(user)
-        db.commit()
-        db.refresh(user)
+        db.flush()
         return user
     
     @staticmethod
