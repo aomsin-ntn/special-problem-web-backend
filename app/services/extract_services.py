@@ -64,7 +64,7 @@ class ExtractServices:
     
     @staticmethod
     def extract_students(text: str):
-        print("\n--- Debugging Student Extraction (FIXED) ---")
+        print("------------Debugging Student Extraction (FIXED)------------")
 
         # -----------------------------
         # 1. Thai students
@@ -121,7 +121,7 @@ class ExtractServices:
 
     @staticmethod
     def extract_advisors(text: str):
-        print("--- Debugging Advisor Extraction ---")
+        print("------------Debugging Advisor Extraction------------")
         th_m = re.search(r'(?:อาจารย์ที่ปรึกษา|คณะกรรมการที่ปรึกษา)[:\s]*(.*?)(?=' + ExtractServices.STOP_GENERAL + ')', text, re.DOTALL | re.IGNORECASE)
         en_m = re.search(r'Advisor[:\s]*(.*?)(?=\bAbstr?act\b|\bAbstact\b|' + ExtractServices.STOP_GENERAL + ')', text, re.DOTALL | re.IGNORECASE)
         
@@ -144,7 +144,7 @@ class ExtractServices:
 
     @staticmethod
     def extract_fields(text: str):
-        print("\n=== START GLOBAL EXTRACTION ===")
+        print("----------START GLOBAL EXTRACTION----------")
         results = {
             "students": ExtractServices.extract_students(text),
             "advisors": ExtractServices.extract_advisors(text)
@@ -225,7 +225,6 @@ class ExtractServices:
         elif year_ce_val and not year_be_val:
             if 1900 < year_ce_val < 2200:
                 results["year_th"] = str(year_ce_val + 543)
-                print(f"  [Auto-fill] Generated year_th from CE: {results['year_th']}")
         
         # Case C: ตรวจสอบความถูกต้องกรณีได้มาทั้งคู่แต่เลขเหมือนกัน (OCR อาจอ่านชื่อหัวข้อผิด)
         elif year_be_val and year_ce_val:
@@ -236,5 +235,5 @@ class ExtractServices:
         results["academic_year_be"] = results.pop("year_th", None)
         results["academic_year_ce"] = results.pop("year_en", None)
 
-        print("=== EXTRACTION COMPLETED ===\n")
+        print("----------EXTRACTION COMPLETED----------")
         return results

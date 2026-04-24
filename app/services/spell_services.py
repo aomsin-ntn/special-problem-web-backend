@@ -5,10 +5,61 @@ import deepcut
 from pythainlp.spell import spell
 from pythainlp.corpus.common import thai_words
 
+from sqlmodel import Session
 from wordfreq import top_n_list
 
-class SpellServices:
+from app.repository.spell_repository import SpellRepository
 
+class SpellServices:
+    
+    @staticmethod
+    async def get_dictionary_report(db: Session, table_type: str, page: int, limit: int, sorted_by: str, order: str):
+        report = await SpellRepository.get_dictionary_report(db, table_type, page, limit, sorted_by, order)
+        return report
+    
+    @staticmethod
+    async def get_error_dict(db: Session):
+        error_dict = await SpellRepository.get_error_dict(db)
+        return error_dict
+    
+    @staticmethod
+    async def get_custom_dict(db: Session):
+        custom_dict = await SpellRepository.get_custom_dict(db)
+        return custom_dict
+    
+    @staticmethod
+    async def get_correction_by_incorrect(db: Session, incorrect: str):
+        correction = await SpellRepository.get_correction_by_incorrect(db, incorrect)
+        return correction
+    
+    @staticmethod
+    async def save_correction_no_commit(db: Session, incorrect: str, correct: str):
+        correction = await SpellRepository.get_correction_by_incorrect(
+            db=db,
+            incorrect=incorrect
+        )
+
+        if correction:
+            correction = await SpellRepository.update_correction_no_commit(
+                db=db,
+                correction=correction,
+                correct=correct
+            )
+        else:
+            correction = await SpellRepository.create_correction_no_commit(
+                db=db,
+                incorrect=incorrect,
+                correct=correct
+            )
+
+        await SpellRepository.upsert_incorrect_word_no_commit(
+            db=db,
+            word_dic_id=correction.word_dic_id,
+            correct=correct
+        )
+
+        return correction
+    
     def __init__(self, error_dict=None, custom_dict=None):
         self.spell_cache = {}
         self.error_dict = {}
@@ -36,6 +87,12 @@ class SpellServices:
             self.thai_dict.update(self.custom_segmentation_dict)
             
         self.eng_dict = set(top_n_list("en", 50000))
+
+    @classmethod
+    async def create(cls, db):
+        error_dict = await SpellRepository.get_error_dict(db)
+        custom_dict = await SpellRepository.get_custom_dict(db)
+        return cls(error_dict=error_dict, custom_dict=custom_dict)
 
     def clean_text(self, text: str) -> str:
         if not text: return ""
@@ -119,3 +176,4 @@ class SpellServices:
             return text1, res1  # ส่งคืนข้อความชุดที่ 1 และรายงานสรุป
         else: 
             return text2, res2  # ส่งคืนข้อความชุดที่ 2 และรายงานสรุป
+        

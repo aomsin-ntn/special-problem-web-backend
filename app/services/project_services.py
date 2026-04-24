@@ -1,5 +1,7 @@
 from datetime import datetime, timezone
 
+import deepcut
+
 from app.models import department
 from app.models.incorrect_word import IncorrectWord
 from app.models.keyword import Keyword
@@ -10,6 +12,7 @@ from app.models.project_author import ProjectAuthor
 from app.models.project_file import ProjectFile
 from app.models.project_keyword import ProjectKeyword
 from app.models.user import Role, User
+from app.repository.master_data_repository import MasterDataRepository
 from app.repository.project_repository import ProjectRepository
 from sqlmodel import Session, select
 from fastapi import HTTPException
@@ -17,10 +20,13 @@ from app.schemas.project_schema import ProjectSubmitRequest
 from app.schemas.root_schema import GetProjectRequestParams
 from uuid import UUID, uuid4
 from app.repository.user_repository import UserRepository
-from app.services.textcomparison_services import TextComparisonServices
+from app.services.comparison_services import ComparisonServices
 from app.models.correction_dictionary import CorrectionDictionary
+from app.services.spell_services import SpellServices
 import difflib
 import re
+
+from app.services.user_services import UserServices
 
 class ProjectServices:
     @staticmethod
@@ -46,31 +52,24 @@ class ProjectServices:
         return result
     
     @staticmethod
-    async def get_error_dict(db: Session):
-        error_dict = await ProjectRepository.get_error_dict(db)
-        return error_dict
-    
-    @staticmethod
-    async def get_custom_dict(db: Session):
-        custom_dict = await ProjectRepository.get_custom_dict(db)
-        return custom_dict
-
-    @staticmethod
-    async def get_dictionary_report(db: Session, table_type: str, page: int, limit: int, sorted_by: str, order: str):
-        report = await ProjectRepository.get_dictionary_report(db, table_type, page, limit, sorted_by, order)
-        return report
-    
-    @staticmethod
     async def delete_project(db: Session, project_id: int, user_id: UUID):
         has_permission = await ProjectServices.check_edit_permission(db, project_id, user_id)
         if not has_permission:
-            raise HTTPException(status_code=403, detail="คุณไม่มีสิทธิ์ลบข้อมูลนี้")
+            raise HTTPException(status_code=403, detail="You do not have permission to delete this resource")
         return await ProjectRepository.delete_project(db, project_id)
-
+    
     @staticmethod
-    async def create_project(db: Session, project_data):
-        new_project = await ProjectRepository.create_project(db, project_data)
-        return new_project
+    async def get_expired_temp_files(db: Session, expiration_minutes: int = 60):
+        expired_files = await ProjectRepository.get_expired_temp_files(db, expiration_minutes)
+        return expired_files
+    
+    @staticmethod
+    async def delete_project_file(db: Session, file_id: UUID):
+        project_file = await ProjectRepository.get_project_file_by_id(db, file_id)
+        if not project_file:
+            raise HTTPException(status_code=404, detail="File not found")
+        await ProjectRepository.delete_project_file(db, file_id)
+        return project_file
 
     @staticmethod
     async def download_projectfile(db:Session,project_id):
@@ -83,31 +82,6 @@ class ProjectServices:
     async def get_faculty(db: Session):
         faculty = await ProjectRepository.get_faculty(db)
         return faculty
-    
-    @staticmethod
-    async def get_master_degrees_data(db: Session):
-        degree = await ProjectRepository.get_master_degrees_data(db)
-        return degree
-
-    @staticmethod
-    async def get_master_faculties(db:Session):
-        faculty = await ProjectRepository.get_master_faculties(db)
-        return faculty
-
-    @staticmethod
-    async def get_master_departments(db:Session):
-        departments = await ProjectRepository.get_master_departments(db)
-        return departments
-
-    @staticmethod
-    async def get_master_advisors(db:Session):
-        advisors = await ProjectRepository.get_master_advisors(db)
-        return advisors
-
-    @staticmethod
-    async def get_master_degrees(db:Session):
-        degrees = await ProjectRepository.get_master_degrees(db)
-        return degrees
 
     @staticmethod
     async def get_user_by_student_id(db:Session, student_id:str):
@@ -115,34 +89,14 @@ class ProjectServices:
         return user
     
     @staticmethod
-    async def create_project_keyword(db: Session, project_keyword_data):
-        new_project_keyword = await ProjectRepository.create_project_keyword(db, project_keyword_data)
-        return new_project_keyword
-    
-    @staticmethod
-    async def create_keyword(db: Session, keyword_data):
-        new_keyword = await ProjectRepository.create_keyword(db, keyword_data)
-        return new_keyword
-    
-    @staticmethod
-    async def create_project_advisor(db: Session, project_advisor_data):
-        new_project_advisor = await ProjectRepository.create_project_advisor(db, project_advisor_data)
-        return new_project_advisor
-    
-    @staticmethod
     async def get_keywords(db: Session):
         keywords = await ProjectRepository.get_keywords(db)
         return keywords
     
     @staticmethod
-    async def create_project_author(db: Session, project_author_data):
-        new_project_author = await ProjectRepository.create_project_author(db, project_author_data)
-        return new_project_author
-    
-    @staticmethod
-    async def create_project_file(db: Session, project_file_data):
-        new_project_file = await ProjectRepository.create_project_file(db, project_file_data)
-        return new_project_file
+    async def get_project_file_by_hash(db: Session, file_hash: str):
+        project_file = await ProjectRepository.get_project_file_by_hash(db, file_hash)
+        return project_file
 
     @staticmethod
     async def get_project_details(db: Session, project_id: int):
@@ -173,6 +127,11 @@ class ProjectServices:
 
         final_result = list(result.values())
         return final_result
+    
+    @staticmethod
+    async def create_project_file(db: Session, file_data):
+        project_file = await ProjectRepository.create_project_file(db, file_data)
+        return project_file
 
     @staticmethod
     async def get_most_downloaded_projects(db: Session):
@@ -198,6 +157,61 @@ class ProjectServices:
         return final_result
     
     @staticmethod
+    def is_match_90(text1: str, text2: str) -> bool:
+        norm1 = ProjectServices.normalize(text1)
+        norm2 = ProjectServices.normalize(text2)
+
+        if not norm1 or not norm2:
+            return False
+
+        score = difflib.SequenceMatcher(None, norm1, norm2).ratio()
+        return score >= 0.9
+
+    @staticmethod
+    async def check_duplicate_project(db, fields):
+        title_th = fields.get("title_th") or ""
+        title_en = fields.get("title_en") or ""
+        year = fields.get("academic_year_ce") or ""
+
+        input_students = fields.get("students", []) or []
+
+        projects = await ProjectRepository.get_active_projects_for_duplicate_check(
+            db=db,
+            year=year
+        )
+
+        for project in projects:
+            title_match = (
+                ProjectServices.is_match_90(title_th, project.title_th)
+                or ProjectServices.is_match_90(title_en, project.title_en)
+            )
+
+            if not title_match:
+                continue
+
+            db_students = await ProjectRepository.get_project_students(
+                db=db,
+                project_id=project.project_id
+            )
+
+            for input_student in input_students:
+                input_th = input_student.get("student_name_th") or ""
+                input_en = input_student.get("student_name_en") or ""
+
+                for row in db_students:
+                    user = row.User if hasattr(row, "User") else row[1]
+
+                    student_match = (
+                        ProjectServices.is_match_90(input_th, user.user_name_th)
+                        or ProjectServices.is_match_90(input_en, user.user_name_en)
+                    )
+
+                    if student_match:
+                        return project
+
+        return None
+    
+    @staticmethod
     def normalize(text):
         if not text: return ""
         # แปลงเป็นตัวพิมพ์เล็ก
@@ -209,18 +223,17 @@ class ProjectServices:
 
     @staticmethod
     def find_match(target_th, target_en, items, th_attr, en_attr):
-
         norm_target_th = ProjectServices.normalize(target_th)
         norm_target_en = ProjectServices.normalize(target_en)
 
         best_match = None
         highest_score = 0
+        best_lang = None
 
         if not items:
             return None
 
         for item in items:
-            # --- FIX: รองรับทั้ง Dictionary (Degree) และ Object (Faculty/Dept) ---
             if isinstance(item, dict):
                 raw_db_th = item.get(th_attr, "")
                 raw_db_en = item.get(en_attr, "")
@@ -231,47 +244,71 @@ class ProjectServices:
             db_th = ProjectServices.normalize(raw_db_th)
             db_en = ProjectServices.normalize(raw_db_en)
 
-            # 1. คำนวณความใกล้เคียง (SequenceMatcher)
-            score_th = difflib.SequenceMatcher(None, norm_target_th, db_th).ratio() if norm_target_th and db_th else 0
-            score_en = difflib.SequenceMatcher(None, norm_target_en, db_en).ratio() if norm_target_en and db_en else 0
-            
-            current_score = max(score_th, score_en)
+            score_th = difflib.SequenceMatcher(
+                None, norm_target_th, db_th
+            ).ratio() if norm_target_th and db_th else 0
 
-            # 2. กรณี Exact Match (หลัง Normalize) ให้คะแนนเต็มทันที
-            if (norm_target_th and norm_target_th == db_th) or (norm_target_en and norm_target_en == db_en):
-                current_score = 1.0
+            score_en = difflib.SequenceMatcher(
+                None, norm_target_en, db_en
+            ).ratio() if norm_target_en and db_en else 0
 
-            # 3. กรณี "เป็นส่วนหนึ่งของกันและกัน" (Partial Match)
-            # เช่น OCR อ่านได้ "วิศวกรรมศาสตร" แต่ DB คือ "วิศวกรรมศาสตรบัณฑิต"
-            elif (norm_target_th and norm_target_th in db_th) or (db_th and db_th in norm_target_th):
-                current_score = max(current_score, 0.85)
-            
-            elif (norm_target_en and norm_target_en in db_en) or (db_en and db_en in norm_target_en):
-                current_score = max(current_score, 0.85)
+            # exact match
+            if norm_target_th and norm_target_th == db_th:
+                score_th = 1.0
 
-            # บันทึกค่าที่ดีที่สุด
+            if norm_target_en and norm_target_en == db_en:
+                score_en = 1.0
+
+            # partial match
+            if norm_target_th and db_th:
+                if norm_target_th in db_th or db_th in norm_target_th:
+                    score_th = max(score_th, 0.85)
+
+            if norm_target_en and db_en:
+                if norm_target_en in db_en or db_en in norm_target_en:
+                    score_en = max(score_en, 0.85)
+
+            if score_th >= score_en:
+                current_score = score_th
+                current_lang = "th"
+            else:
+                current_score = score_en
+                current_lang = "en"
+
             if current_score > highest_score:
                 highest_score = current_score
                 best_match = item
+                best_lang = current_lang
 
-        # คืนค่าถ้าความมั่นใจเกิน 0.6
-        print(f"[Match Debug] Best Score: {highest_score:.2f} for '{target_th or target_en}'")
+        print(
+            f"[Match Debug] Best Score: {highest_score:.2f} "
+            f"({best_lang}) for '{target_th or target_en}'"
+        )
+
         return best_match if highest_score > 0.6 else None
     
     @staticmethod
     def find_match_keywords(target_th, target_en, items, th_attr, en_attr):
-
         norm_target_th = ProjectServices.normalize(target_th)
         norm_target_en = ProjectServices.normalize(target_en)
 
+        # กัน keyword สั้นเกินไป
+        if norm_target_th and len(norm_target_th) < 2:
+            norm_target_th = ""
+
+        if norm_target_en and len(norm_target_en) < 2:
+            norm_target_en = ""
+
+        if not norm_target_th and not norm_target_en:
+            return None
+
         best_match = None
-        highest_score = 0
+        highest_avg_score = 0.0
 
         if not items:
             return None
 
         for item in items:
-            # --- FIX: รองรับทั้ง Dictionary (Degree) และ Object (Faculty/Dept) ---
             if isinstance(item, dict):
                 raw_db_th = item.get(th_attr, "")
                 raw_db_en = item.get(en_attr, "")
@@ -282,32 +319,55 @@ class ProjectServices:
             db_th = ProjectServices.normalize(raw_db_th)
             db_en = ProjectServices.normalize(raw_db_en)
 
-            # 1. คำนวณความใกล้เคียง (SequenceMatcher)
-            score_th = difflib.SequenceMatcher(None, norm_target_th, db_th).ratio() if norm_target_th and db_th else 0
-            score_en = difflib.SequenceMatcher(None, norm_target_en, db_en).ratio() if norm_target_en and db_en else 0
-            
-            current_score = max(score_th, score_en)
+            score_th = 0.0
+            score_en = 0.0
+            used_scores = []
 
-            # 2. กรณี Exact Match (หลัง Normalize) ให้คะแนนเต็มทันที
-            if (norm_target_th and norm_target_th == db_th) or (norm_target_en and norm_target_en == db_en):
-                current_score = 1.0
+            if norm_target_th and db_th:
+                score_th = difflib.SequenceMatcher(None, norm_target_th, db_th).ratio()
 
-            # 3. กรณี "เป็นส่วนหนึ่งของกันและกัน" (Partial Match)
-            # เช่น OCR อ่านได้ "วิศวกรรมศาสตร" แต่ DB คือ "วิศวกรรมศาสตรบัณฑิต"
-            elif (norm_target_th and norm_target_th in db_th) or (db_th and db_th in norm_target_th):
-                current_score = max(current_score, 0.85)
-            
-            elif (norm_target_en and norm_target_en in db_en) or (db_en and db_en in norm_target_en):
-                current_score = max(current_score, 0.85)
+                if norm_target_th == db_th:
+                    score_th = 1.0
 
-            # บันทึกค่าที่ดีที่สุด
-            if current_score > highest_score:
-                highest_score = current_score
+                if len(norm_target_th) >= 3:
+                    if norm_target_th in db_th or db_th in norm_target_th:
+                        score_th = max(score_th, 0.9)
+
+                used_scores.append(score_th)
+
+            if norm_target_en and db_en:
+                score_en = difflib.SequenceMatcher(None, norm_target_en, db_en).ratio()
+
+                if norm_target_en == db_en:
+                    score_en = 1.0
+
+                if len(norm_target_en) >= 3:
+                    if norm_target_en in db_en or db_en in norm_target_en:
+                        score_en = max(score_en, 0.9)
+
+                used_scores.append(score_en)
+
+            if not used_scores:
+                continue
+
+            avg_score = sum(used_scores) / len(used_scores)
+
+            print(
+                f"[Keyword Match Debug] "
+                f"TH={score_th:.2f} EN={score_en:.2f} AVG={avg_score:.2f} "
+                f"| TH='{target_th}' EN='{target_en}'"
+            )
+
+            if len(used_scores) == 2:
+                is_match = score_th >= 0.9 and score_en >= 0.9
+            else:
+                is_match = avg_score >= 0.9
+
+            if is_match and avg_score > highest_avg_score:
+                highest_avg_score = avg_score
                 best_match = item
 
-        # คืนค่าถ้าความมั่นใจเกิน 0.6
-        print(f"[Match Debug] Best Score: {highest_score:.2f} for '{target_th or target_en}'")
-        return best_match if highest_score > 0.9 else None
+        return best_match
     
     @staticmethod
     async def check_edit_permission(db: Session, project_id: UUID, user_id: UUID) -> bool:
@@ -318,144 +378,154 @@ class ProjectServices:
     async def get_project_details_check_permission(db: Session, project_id: int, user_id: UUID):
         has_permission = await ProjectServices.check_edit_permission(db, project_id, user_id)
         if not has_permission:
-            raise HTTPException(status_code=403, detail="คุณไม่มีสิทธิ์เข้าถึงข้อมูลนี้")
+            raise HTTPException(status_code=403, detail="You do not have permission to access this resource")
         return await ProjectServices.get_project_details(db, project_id)
     
     @staticmethod
-    async def save_project_data(data: ProjectSubmitRequest, old_data: ProjectSubmitRequest, db, current_user):
+    async def save_project(data: ProjectSubmitRequest, old_data: ProjectSubmitRequest, db, current_user):
         """
         บันทึกข้อมูลโปรเจกต์ทั้งหมดลงฐานข้อมูล (Atomic Operation)
         """
         try:
-            comparison_tool = TextComparisonServices()
-            fields_to_check = ["title_th", "title_en", "abstract_th", "abstract_en", "academic_year_be", "academic_year_ce"]
+            spell_services = await SpellServices.create(db)
+            comparison_tool = ComparisonServices()
+
+            # --- Normalize academic year ---
+            if not data.academic_year_be and data.academic_year_ce:
+                try:
+                    ce = int(str(data.academic_year_ce).strip())
+                    if 1900 < ce < 2200:
+                        data.academic_year_be = str(ce + 543)
+                except ValueError:
+                    pass
+
+            fields_to_check = [
+                "title_th",
+                "title_en",
+                "abstract_th",
+                "abstract_en",
+                "keywords_th",
+                "keywords_en"
+            ]
+
             comparison_results = {}
 
-            # --- 0. เปรียบเทียบข้อมูลเพื่อเก็บ Log (OCR vs User Edit) ---
+            # --- 0. เปรียบเทียบข้อมูล OCR vs User Edit ---
             for field in fields_to_check:
-                old_val = getattr(old_data, field) if hasattr(old_data, field) else ""
-                new_val = getattr(data, field) if hasattr(data, field) else ""
+                old_val = getattr(old_data, field, "") if hasattr(old_data, field) else ""
+                new_val = getattr(data, field, "") if hasattr(data, field) else ""
 
-                # กรณี Keywords (หากถูกส่งมาเป็น list)
-                if isinstance(old_val, list): old_val = ", ".join(filter(None, old_val))
-                if isinstance(new_val, list): new_val = ", ".join(filter(None, new_val))
+                if isinstance(old_val, list):
+                    old_val = ", ".join(filter(None, old_val))
+
+                if isinstance(new_val, list):
+                    new_val = ", ".join(filter(None, new_val))
 
                 diff_list = comparison_tool.compare_as_list(str(old_val), str(new_val))
+
                 if diff_list:
                     comparison_results[field] = diff_list
-            # --- ต่อจากส่วนเปรียบเทียบข้อมูลที่คุณเขียนไว้ ---
+
+            # --- 1. Learn correction dictionary ---
             if comparison_results:
                 for field, diffs in comparison_results.items():
                     for change in diffs:
-                        # สนใจเฉพาะจุดที่มีการแก้ไข (from และ to ต้องไม่เป็น None)
                         incorrect = change.get("from")
                         correct = change.get("to")
-                        
-                        if incorrect and correct:
-                            # 1. ค้นหาใน CorrectionDictionary ว่ามีคำผิดนี้อยู่หรือยัง
-                            existing_dic = db.exec(select(CorrectionDictionary).where(CorrectionDictionary.incorrect_word == incorrect)).first()
-                            
-                            if existing_dic:
-                                # 1. บวก Count รวมของคำผิดนี้เสมอ
-                                existing_dic.count += 1
-                                existing_dic.updated_at = datetime.utcnow()
-                                
-                                # 2. ตรวจสอบและเพิ่มคำใหม่เข้าไปในลิสต์ (ถ้ายังไม่มี)
-                                current_list = existing_dic.correct_word_list if existing_dic.correct_word_list is not None else []
-                                
-                                # เช็คว่าคำใหม่ (correct) มีอยู่ในลิสต์ปัจจุบันหรือยัง
-                                if correct not in current_list:
-                                    # สร้างลิสต์ใหม่เพื่อความชัวร์ว่า SQLAlchemy จะเห็นการเปลี่ยนแปลง (Re-assignment)
-                                    new_list = list(current_list) 
-                                    new_list.append(correct)
-                                    existing_dic.correct_word_list = new_list
-                                
-                            else:
-                                # กรณีสร้าง Entry ใหม่ครั้งแรก
-                                new_dic = CorrectionDictionary(
-                                    incorrect_word=incorrect,
-                                    correct_word_list=[correct], # เริ่มต้นด้วยลิสต์ที่มีคำเดียว
-                                    count=1
-                                )
-                                db.add(new_dic)
-                                db.flush() 
-                                existing_dic = new_dic
 
-                            # 2. บันทึกลงตารางย่อย IncorrectWord เพื่อเก็บสถิติว่าคำนี้ถูกแก้เป็นอะไรบ่อยที่สุด
-                            inc_word_record =  db.exec(select(IncorrectWord).where(
-                                    IncorrectWord.word_dic_id == existing_dic.word_dic_id,
-                                    IncorrectWord.correct_word == correct
-                                )
-                            ).first()
+                        if not incorrect or not correct:
+                            continue
 
-                            if inc_word_record:
-                                inc_word_record.count += 1
-                            else:
-                                db.add(IncorrectWord(
-                                    word_dic_id=existing_dic.word_dic_id,
-                                    correct_word=correct,
-                                    count=1
-                                ))
-            db.flush() # บังคับเคลียร์การเปลี่ยนแปลงใน CorrectionDictionary และ IncorrectWord ลง DB ก่อนที่จะดำเนินการต่อไปกับ Project
-            # 1. สั่งระงับ Autoflush ตลอดการทำงานในบล็อกนี้ ป้องกันระบบแทรกคิว
-            with db.no_autoflush:
-                
-                # --- 1. จัดการ Metadata IDs (Faculty, Dept, Degree) ---
-                async def get_id(input_data, master_func, th_attr, en_attr, id_attr):
-                    if not input_data: return None
-                    target_id = getattr(input_data, id_attr, None)
-                    if not target_id:
-                        master_items = await master_func(db)
-                        match = ProjectServices.find_match(
-                            getattr(input_data, th_attr, ""), 
-                            getattr(input_data, en_attr, ""), 
-                            master_items, th_attr, en_attr
+                        if incorrect == correct:
+                            continue
+
+                        # กันประโยคยาว / rewrite
+                        if len(incorrect.split()) > 3:
+                            continue
+
+                        # ตรวจว่าคำเดิมเป็นคำผิดจริงไหม
+                        tokens = deepcut.tokenize(
+                            spell_services.clean_text(incorrect),
+                            spell_services.custom_segmentation_dict
                         )
-                        return getattr(match, id_attr) if match else None
-                    return target_id
-                
-                actual_degree_id = await get_id(data.degree, ProjectServices.get_master_degrees_data, "degree_name_th", "degree_name_en", "degree_id")
 
-                # --- 2. บันทึกไฟล์ (ProjectFile) ---
-                project_file = ProjectFile(
-                    file_id=uuid4(),
-                    file_name=data.file_info.save_name,
-                    file_path=data.file_info.file_path,
-                    thumbnail_path=data.file_info.thumbnail_path, 
-                    uploaded_at=datetime.utcnow()
+                        spell_info = spell_services.check_spelling(tokens)
+
+                        if spell_info.get("incorrect", 0) == 0:
+                            continue
+
+                        await SpellServices.save_correction_no_commit(
+                            db=db,
+                            incorrect=incorrect,
+                            correct=correct
+                        )
+
+            db.flush()
+
+            with db.no_autoflush:
+
+                # --- 2. Degree ID ---
+                async def get_id(input_data, master_func, th_attr, en_attr, id_attr):
+                    if not input_data:
+                        return None
+
+                    target_id = getattr(input_data, id_attr, None)
+
+                    if target_id:
+                        return target_id
+
+                    master_items = await master_func(db)
+
+                    match = ProjectServices.find_match(
+                        getattr(input_data, th_attr, ""),
+                        getattr(input_data, en_attr, ""),
+                        master_items,
+                        th_attr,
+                        en_attr
+                    )
+
+                    return getattr(match, id_attr) if match else None
+
+                actual_degree_id = await get_id(
+                    data.degree,
+                    MasterDataRepository.get_master_degrees_data,
+                    "degree_name_th",
+                    "degree_name_en",
+                    "degree_id"
                 )
-                db.add(project_file)
-                db.flush()
 
-                # --- 3. บันทึกโปรเจกต์ (Project) ---
-                project = Project(
-                    project_id=uuid4(),
+                # --- 3. ProjectFile ---
+                project_file = await ProjectRepository.get_project_file_by_id(db, data.file_info.file_id)
+
+                if not project_file:
+                    raise HTTPException(status_code=404, detail="File not found")
+                
+                await ProjectRepository.mark_file_as_saved(db, data.file_info.file_id)
+
+                # --- 4. Project ---
+                project = await ProjectRepository.create_project_no_commit(
+                    db=db,
                     title_th=data.title_th,
                     title_en=data.title_en,
                     abstract_th=data.abstract_th,
                     abstract_en=data.abstract_en,
-                    academic_year_be=data.academic_year_be, 
+                    academic_year_be=data.academic_year_be,
                     academic_year_ce=data.academic_year_ce,
                     degree_id=actual_degree_id,
-                    # faculty_id=actual_faculty_id, # ใส่ตามชื่อ field ใน Model ของคุณ
-                    # department_id=actual_dept_id,
                     created_by=current_user.user_id,
-                    is_active=True,
-                    file_id=project_file.file_id,
-                    download_count=0,
-                    edit_logs=comparison_results # บันทึกผลการเทียบ OCR ไว้ในตาราง Project เลย (ถ้ามี field)
+                    file_id=project_file.file_id
                 )
-                db.add(project)
-                db.flush()
 
-                # --- 4. บันทึกนักศึกษา (ProjectAuthor) ---
+                # --- 5. Students / Authors ---
                 for idx, s in enumerate(data.students, start=1):
-                    if not s.student_id: continue
-                    # ตรวจสอบว่ามี User นี้ในระบบหรือยัง
+                    if not s.student_id:
+                        continue
+
                     user = await ProjectServices.get_user_by_student_id(db, s.student_id)
+
                     if not user:
-                        user = User(
-                            user_id=uuid4(),
+                        user = await UserServices.create_user_no_commit(
+                            db=db,
                             student_id=s.student_id,
                             user_name_th=s.student_name_th,
                             user_name_en=s.student_name_en,
@@ -463,69 +533,70 @@ class ProjectServices:
                             role=Role.STUDENT,
                             email=f"{s.student_id}@kmitl.ac.th"
                         )
-                        db.add(user)
-                        db.flush()
-                    
-                    # ผูกความสัมพันธ์ Author
-                    db.add(ProjectAuthor(
-                        project_id=project.project_id, 
-                        user_id=user.user_id, 
-                        author_order=idx
-                    ))
 
-                # --- 5. บันทึกอาจารย์ (ProjectAdvisor) ---
+                    await ProjectRepository.add_project_author_no_commit(
+                        db=db,
+                        project_id=project.project_id,
+                        user_id=user.user_id,
+                        author_order=idx
+                    )
+
+                # --- 6. Advisors ---
                 for idx, adv in enumerate(data.advisors, start=1):
                     if adv.advisor_id:
-                        db.add(ProjectAdvisor(
-                            project_id=project.project_id, 
-                            advisor_id=adv.advisor_id, 
+                        await ProjectRepository.add_project_advisor_no_commit(
+                            db=db,
+                            project_id=project.project_id,
+                            advisor_id=adv.advisor_id,
                             advisor_order=idx
-                        ))
+                        )
 
-                # --- 6. บันทึกคำสำคัญ (Keyword & ProjectKeyword) ---
-                db_keywords = await ProjectServices.get_keywords(db)
+                # --- 7. Keywords ---
+                db_keywords = await ProjectRepository.get_keywords(db)
                 used_keyword_ids = set()
 
                 for idx, kw in enumerate(data.keywords, start=1):
-                    target_kw_id = None
-                    
-                    # เช็ค ID ก่อน
-                    if hasattr(kw, 'keyword_id') and kw.keyword_id:
-                        target_kw_id = kw.keyword_id
+                    th_text = (kw.keyword_text_th or "").strip()
+                    en_text = (kw.keyword_text_en or "").strip()
+
+                    if not th_text and not en_text:
+                        continue
+
+                    match = ProjectServices.find_match_keywords(
+                        th_text,
+                        en_text,
+                        db_keywords,
+                        "keyword_text_th",
+                        "keyword_text_en"
+                    )
+
+                    if match:
+                        target_kw_id = match.keyword_id
                     else:
-                        # ถ้าไม่มี ID ให้หาจาก Text Match
-                        match = ProjectServices.find_match_keywords(
-                            kw.keyword_text_th, kw.keyword_text_en, 
-                            db_keywords, "keyword_text_th", "keyword_text_en"
+                        new_kw = await ProjectRepository.create_keyword_no_commit(
+                            db=db,
+                            th_text=th_text,
+                            en_text=en_text
                         )
-                        if match:
-                            target_kw_id = match.keyword_id
-                        else:
-                            # ถ้าไม่เจอจริงๆ ให้สร้างใหม่
-                            new_kw = Keyword(
-                                keyword_id=uuid4(),
-                                keyword_text_th=kw.keyword_text_th,
-                                keyword_text_en=kw.keyword_text_en
-                            )
-                            db.add(new_kw)
-                            db.flush()
 
-                            target_kw_id = new_kw.keyword_id
-                            db_keywords.append(new_kw) # ป้องกันคำซ้ำใน loop เดียวกัน
+                        target_kw_id = new_kw.keyword_id
+                        db_keywords.append(new_kw)
 
-                    # บันทึกความสัมพันธ์ Keyword
                     if target_kw_id and target_kw_id not in used_keyword_ids:
-                        db.add(ProjectKeyword(
-                            project_id=project.project_id, 
-                            keyword_id=target_kw_id, 
+                        await ProjectRepository.add_project_keyword_no_commit(
+                            db=db,
+                            project_id=project.project_id,
+                            keyword_id=target_kw_id,
                             keyword_order=idx
-                        ))
+                        )
                         used_keyword_ids.add(target_kw_id)
 
             db.commit()
 
-            # เมื่อจบ block async with db.begin() ระบบจะ Commit ให้อัตโนมัติ
-            return {"status": "success", "project_id": str(project.project_id)}
+            return {
+                "status": "success",
+                "project_id": str(project.project_id)
+            }
 
         except Exception as e:
             db.rollback()
@@ -533,125 +604,120 @@ class ProjectServices:
             raise e
         
     @staticmethod
-    async def save_update_project_data(project_id: str, data: ProjectSubmitRequest, db, current_user):
-        project = db.exec(select(Project).where(Project.project_id == project_id)).first()
-
-        if not project:
-            raise HTTPException(status_code=404, detail="ไม่พบโปรเจกต์นี้")
-
-        project.title_th = data.title_th
-        project.title_en = data.title_en
-        project.abstract_th = data.abstract_th
-        project.abstract_en = data.abstract_en
-        project.academic_year_be = data.academic_year_be
-        project.academic_year_ce = data.academic_year_ce
-        if data.degree and data.degree.degree_id:
-            project.degree_id = data.degree.degree_id
-
-        project.updated_by = current_user.user_id
-        project.updated_at = datetime.utcnow()
-
-        existing_advisors = db.exec(
-            select(ProjectAdvisor).where(ProjectAdvisor.project_id == project_id)
-        ).all()
-        for old_adv in existing_advisors:
-            db.delete(old_adv)
-        db.flush()
-
-        for idx, adv in enumerate(data.advisors, start=1):
-            if adv.advisor_id:
-                db.add(ProjectAdvisor(
-                    project_id=project.project_id,
-                    advisor_id=adv.advisor_id,
-                    advisor_order=idx
-                ))
-
-        # --- อัปเดต Keywords ---
-        existing_p_keywords = db.exec(
-            select(ProjectKeyword).where(ProjectKeyword.project_id == project_id)
-        ).all()
-        for old_pkw in existing_p_keywords:
-            db.delete(old_pkw)
-        db.flush()
-
-        db_keywords = await ProjectServices.get_keywords(db)
-        used_keyword_ids = set()
-
-        def clean_text(text: str) -> str:
-            return text.strip() if text else ""
-
-        for idx, kw in enumerate(data.keywords, start=1):
-            target_kw_id = None
-
-            th_text = clean_text(getattr(kw, "keyword_text_th", ""))
-            en_text = clean_text(getattr(kw, "keyword_text_en", ""))
-
-            if not th_text and not en_text:
-                continue
-
-            incoming_kw_id = getattr(kw, "keyword_id", None)
-
-            # ถ้ามี id เดิมมา ให้ตรวจว่า text ยังตรงกับ keyword เดิมไหม
-            # ถ้าไม่ตรง ให้ถือว่า id เป็น null แล้วไปหาใหม่
-            if incoming_kw_id:
-                existing_kw = db.exec(
-                    select(Keyword).where(Keyword.keyword_id == incoming_kw_id)
-                ).first()
-
-                if existing_kw:
-                    db_th = clean_text(existing_kw.keyword_text_th)
-                    db_en = clean_text(existing_kw.keyword_text_en)
-
-                    same_th = (not th_text and not db_th) or (th_text == db_th)
-                    same_en = (not en_text and not db_en) or (en_text == db_en)
-
-                    if same_th and same_en:
-                        target_kw_id = existing_kw.keyword_id
-                    else:
-                        incoming_kw_id = None
-                else:
-                    incoming_kw_id = None
-
-            # ถ้าไม่มี id หรือ id เดิมใช้ไม่ได้แล้ว -> หา match จาก text ใหม่
-            if not target_kw_id:
-                match = ProjectServices.find_match_keywords(
-                    th_text,
-                    en_text,
-                    db_keywords,
-                    "keyword_text_th",
-                    "keyword_text_en"
-                )
-
-                if match:
-                    target_kw_id = match.keyword_id
-                else:
-                    new_kw = Keyword(
-                        keyword_id=uuid4(),
-                        keyword_text_th=th_text,
-                        keyword_text_en=en_text
-                    )
-                    db.add(new_kw)
-                    db.flush()
-                    target_kw_id = new_kw.keyword_id
-                    db_keywords.append(new_kw)
-
-            if target_kw_id and target_kw_id not in used_keyword_ids:
-                db.add(ProjectKeyword(
-                    project_id=project.project_id,
-                    keyword_id=target_kw_id,
-                    keyword_order=idx
-                ))
-                used_keyword_ids.add(target_kw_id)
-
+    async def update_project(project_id: str, data: ProjectSubmitRequest, db, current_user):
         try:
+            project = await ProjectRepository.get_project_by_id(db, project_id)
+
+            if not project:
+                raise HTTPException(status_code=404, detail="Project not found")
+
+            if not data.academic_year_be and data.academic_year_ce:
+                try:
+                    ce = int(str(data.academic_year_ce).strip())
+                    if 1900 < ce < 2200:
+                        data.academic_year_be = str(ce + 543)
+                except ValueError:
+                    pass
+
+            project.title_th = data.title_th
+            project.title_en = data.title_en
+            project.abstract_th = data.abstract_th
+            project.abstract_en = data.abstract_en
+            project.academic_year_be = data.academic_year_be
+            project.academic_year_ce = data.academic_year_ce
+
+            if data.degree and data.degree.degree_id:
+                project.degree_id = data.degree.degree_id
+
+            project.updated_by = current_user.user_id
+            project.updated_at = datetime.utcnow()
+
+            with db.no_autoflush:
+                await ProjectRepository.delete_project_advisors_no_commit(db, project_id)
+
+                for idx, adv in enumerate(data.advisors, start=1):
+                    if adv.advisor_id:
+                        await ProjectRepository.add_project_advisor_no_commit(
+                            db=db,
+                            project_id=project.project_id,
+                            advisor_id=adv.advisor_id,
+                            advisor_order=idx
+                        )
+
+                await ProjectRepository.delete_project_keywords_no_commit(db, project_id)
+
+                db_keywords = await ProjectRepository.get_keywords(db)
+                used_keyword_ids = set()
+
+                def clean_text(text: str) -> str:
+                    return text.strip() if text else ""
+
+                for idx, kw in enumerate(data.keywords, start=1):
+                    target_kw_id = None
+
+                    th_text = clean_text(getattr(kw, "keyword_text_th", ""))
+                    en_text = clean_text(getattr(kw, "keyword_text_en", ""))
+
+                    if not th_text and not en_text:
+                        continue
+
+                    incoming_kw_id = getattr(kw, "keyword_id", None)
+
+                    if incoming_kw_id:
+                        existing_kw = await ProjectRepository.get_keyword_by_id(db, incoming_kw_id)
+
+                        if existing_kw:
+                            db_th = clean_text(existing_kw.keyword_text_th)
+                            db_en = clean_text(existing_kw.keyword_text_en)
+
+                            same_th = (not th_text and not db_th) or (th_text == db_th)
+                            same_en = (not en_text and not db_en) or (en_text == db_en)
+
+                            if same_th and same_en:
+                                target_kw_id = existing_kw.keyword_id
+
+                    if not target_kw_id:
+                        match = ProjectServices.find_match_keywords(
+                            th_text,
+                            en_text,
+                            db_keywords,
+                            "keyword_text_th",
+                            "keyword_text_en"
+                        )
+
+                        if match:
+                            target_kw_id = match.keyword_id
+                        else:
+                            new_kw = await ProjectRepository.create_keyword_no_commit(
+                                db=db,
+                                th_text=th_text,
+                                en_text=en_text
+                            )
+                            target_kw_id = new_kw.keyword_id
+                            db_keywords.append(new_kw)
+
+                    if target_kw_id and target_kw_id not in used_keyword_ids:
+                        await ProjectRepository.add_project_keyword_no_commit(
+                            db=db,
+                            project_id=project.project_id,
+                            keyword_id=target_kw_id,
+                            keyword_order=idx
+                        )
+                        used_keyword_ids.add(target_kw_id)
+
             db.commit()
             db.refresh(project)
+
+            return {"status": "success", "message": "อัปเดตข้อมูลสำเร็จ"}
+
+        except HTTPException:
+            db.rollback()
+            raise
+
         except Exception as e:
             db.rollback()
             print(f"Update Error: {e}")
             raise HTTPException(status_code=500, detail="ไม่สามารถอัปเดตข้อมูลได้")
-
-        return {"status": "success", "message": "อัปเดตข้อมูลสำเร็จ"}
     
 
     @staticmethod
@@ -723,9 +789,10 @@ class ProjectServices:
 
         if null_ratio > 0.6:
             raise HTTPException(
+                print("Error : Incomplete data with high null ratio"),  # Debug: แสดงข้อความผิดพลาดใน Log
                 status_code=422,
                 detail={
-                    "message": "ข้อมูลไม่สมบูรณ์",
+                    "message": "Incomplete data",
                     "missing_fields": empty_fields,
                     "null_ratio": null_ratio
                 }
@@ -733,9 +800,10 @@ class ProjectServices:
 
         if not has_english:
             raise HTTPException(
+                print("Error : No English data found"),  # Debug: แสดงข้อความผิดพลาดใน Log
                 status_code=422,
                 detail={
-                    "message": "ไม่พบข้อมูลภาษาอังกฤษ",
-                    "hint": "OCR อาจอ่านผิด หรือไม่มี field ภาษาอังกฤษเลย"
+                    "message": "No English data found",
+                    "hint": "OCR might have read incorrectly, or there's no English field available"
                 }
             )

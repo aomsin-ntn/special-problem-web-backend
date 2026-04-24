@@ -1,5 +1,9 @@
 from dataclasses import fields
+from fastapi import HTTPException
 
+from app.models.project_file import ProjectFile
+from app.repository.master_data_repository import MasterDataRepository
+from app.repository.project_repository import ProjectRepository
 from app.services.file_services import FileServices
 from app.services.ocr_services import OCRServices
 from app.services.text_services import TextServices
@@ -34,11 +38,26 @@ class UploadServices:
     async def handle_upload(self, file, pages, db, current_user):
         # save file
         start_time = time.time()
-        dest, save_name = self.file_services.save(file)
-
-        # thumbnail
+        dest, save_name, file_hash = self.file_services.save(file)
         thumbnail_img = self.ocr_services.get_thumbnail(str(dest))
         thumbnail_path = self.file_services.save_thumbnail(thumbnail_img)
+        project_file = ProjectFile(
+            file_path=str(dest),
+            file_name=save_name,
+            file_hash=file_hash,
+            thumbnail_path=thumbnail_path,
+        )
+        project_file_info = await ProjectServices.create_project_file(db, project_file)
+
+        existing_file = await ProjectServices.get_project_file_by_hash(db, file_hash)
+  
+        if existing_file:
+            raise HTTPException(
+                status_code=409,
+                detail="This file has already been uploaded"
+            )
+        # thumbnail
+
 
         # OCR + extract
         sorted_pages = sorted(pages)
@@ -53,12 +72,17 @@ class UploadServices:
 
         # process text
         fields, spell_res = await self.text_services.process(raw_ocr_results, db)
-        
+        existing_project = await ProjectServices.check_duplicate_project(db=db,fields=fields)
+        if existing_project:
+            raise HTTPException(
+                status_code=409,
+                detail="This project has already been uploaded"
+            )
         # get Master Data
-        degrees = await ProjectServices.get_master_degrees_data(db)
-        advisors = await ProjectServices.get_master_advisors(db)
-        departments = await ProjectServices.get_master_departments(db)
-        faculties = await ProjectServices.get_master_faculties(db)
+        degrees = await MasterDataRepository.get_master_degrees_data(db)
+        advisors = await MasterDataRepository.get_master_advisors(db)
+        departments = await MasterDataRepository.get_master_departments(db)
+        faculties = await MasterDataRepository.get_master_faculties(db)
         # print("----------Debug Master Data from DB----------")
         # print(f"Advisors: {advisors}")
         # print(f"Degrees: {degrees}")
@@ -137,12 +161,15 @@ class UploadServices:
         end_time = time.time()  # 2. บันทึกเวลาเมื่อทำงานเสร็จ
         processing_time = round(end_time - start_time, 2)
         print(f"Total processing time: {processing_time} seconds")  # 3. แสดงเวลาที่ใช้ในการประมวลผล
+
         # 5. ส่ง JSON คืนหน้าบ้านให้ User ตรวจสอบ
         return {
             "file_info": {
+                "file_id": project_file_info.file_id,
                 "file_path": str(dest),
                 "save_name": save_name,
-                "thumbnail_path": str(thumbnail_path)
+                "thumbnail_path": str(thumbnail_path),
+                "file_hash": file_hash  
             },
             "form_data": {
                 "title_th": fields.get("title_th", ""),

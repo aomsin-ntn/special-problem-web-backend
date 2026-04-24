@@ -1,7 +1,7 @@
 import difflib
 import deepcut
 
-class TextComparisonServices:
+class ComparisonServices:
     def __init__(self, custom_dict=None):
         self.custom_dict = custom_dict if custom_dict else []
 
