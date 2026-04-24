@@ -6,11 +6,13 @@ from app.api.authentication import router as auth_router
 from app.database import init_db
 from starlette.middleware.sessions import SessionMiddleware
 from app.api.master import router as master_router
+from app.api.report import router as report_router
 
 app = FastAPI()
 app.include_router(project_router,tags=["Project Management"])
 app.include_router(auth_router,tags=["Authentication and User Management"])
 app.include_router(master_router,tags=["Get Master Data"])
+app.include_router(report_router,tags=["Report"])
 app.mount("/thumbnails",StaticFiles(directory="thumbnails"), name="static")
 app.mount("/uploads",StaticFiles(directory="uploads"), name="static")
 
