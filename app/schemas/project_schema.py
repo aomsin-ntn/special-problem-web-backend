@@ -16,6 +16,7 @@ class FileInfoInput(BaseModel):
     file_path: str
     save_name: str
     thumbnail_path: str
+    file_hash: str
 
 class DegreeInput(BaseModel):
     degree_id: Optional[UUID] = None
