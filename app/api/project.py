@@ -16,6 +16,8 @@ from app.api.authentication import get_current_user
 from app.api.authentication import require_role
 
 # Services
+from app.services.file_services import FileServices
+from app.services.spell_services import SpellServices
 from app.services.upload_services import UploadServices
 from app.services.project_services import ProjectServices
 
@@ -107,8 +109,10 @@ async def handle_upload(
     user: User = Depends(get_current_user),
 ):
     try:
+        await FileServices.cleanup_temp_files(db)
         if not file.filename.endswith(".pdf"):
-            raise HTTPException(status_code=400, detail="รองรับเฉพาะไฟล์ PDF เท่านั้น")
+            print("Error : Only PDF files are allowed"),  # Debug: แสดงข้อความผิดพลาดใน Log
+            raise HTTPException(status_code=400, detail="Only PDF files are allowed")
 
         result = await service.handle_upload(file, pages=pages, db=db, current_user=user)
         # print(result)  # Debug: แสดงผลลัพธ์ที่ได้จากการประมวลผล
@@ -119,9 +123,10 @@ async def handle_upload(
         raise
     except Exception as e:
         print(f"OCR/Upload Error: {e}")
+        print("Error : Unable to read the uploaded file")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"เกิดข้อผิดพลาดในการอ่านไฟล์: {str(e)}"
+            detail=f"Unable to read the uploaded file: {str(e)}"
         )
 
 @router.post("/save")
@@ -134,7 +139,7 @@ async def save_project(
     try:
         # โยนภาระไปให้ Service จัดการให้หมด
         ProjectServices.validate_extracted_data(data.data.model_dump())
-        result = await project_service.save_project_data(data.data, data.old_data, db, current_user)
+        result = await project_service.save_project(data.data, data.old_data, db, current_user)
         print("----------SAVE RESULT DEBUG----------")
         print(data)
         return result
@@ -173,8 +178,8 @@ async def get_project_details_check_permission(
             detail="เกิดข้อผิดพลาดในการดึงข้อมูลจากฐานข้อมูล"
         )
 
-@router.post("/save_update_project_data/{project_id}")
-async def save_update_project(
+@router.post("/update_projecta/{project_id}")
+async def update_project(
     project_id: UUID,
     data: ProjectSubmitRequest, 
     db: Annotated[Session, Depends(get_db)], 
@@ -182,7 +187,7 @@ async def save_update_project(
     project_service: ProjectServices = Depends()
 ):
     try:
-        result = await project_service.save_update_project_data(str(project_id), data, db, current_user)
+        result = await project_service.update_project(str(project_id), data, db, current_user)
         return result
 
     except SQLAlchemyError as db_error:
@@ -245,39 +250,3 @@ async def delete_project(
         raise HTTPException(status_code=500, detail="เกิดข้อผิดพลาดในการลบโปรเจกต์นี้")
 
 
-# --- 4. Reports & Staff Only (Admin) ---   
-@router.get("/report")
-async def get_projects_report(
-    db: Annotated[Session, Depends(get_db)],
-    request: Annotated[GetProjectRequestParams, Query()],
-    authorized_user: User = Depends(require_role([Role.STAFF]))
-):
-    try:
-        # ใช้ Logic การดึงข้อมูลเดิมจาก Repository ได้เลย
-        projects = await ProjectServices.get_projects(db, request)
-        return projects
-    except SQLAlchemyError as e:
-        print(f"DB Error: {e}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, 
-            detail="ไม่สามารถดึงข้อมูลรายงานโปรเจกต์ได้ในขณะนี้"
-        )
-
-@router.get("/report/dictionary")
-async def get_dictionary_report_api(
-    db: Annotated[Session, Depends(get_db)],
-    table_type: str = Query(..., description="incorrect, correction, or custom"),
-    page: int = Query(1, ge=1),
-    limit: int = Query(20, ge=1),
-    sorted_by: str = Query(None),
-    order: str = Query("desc"),
-    authorized_user: User = Depends(require_role([Role.STAFF]))
-):
-    try:
-        result = await ProjectServices.get_dictionary_report(db, table_type, page, limit, sorted_by, order)
-        return result
-    except Exception as e:
-        db.rollback()
-        print(f"Error fetching dictionary: {e}")
-        raise HTTPException(status_code=500, detail="ไม่สามารถดึงข้อมูลรายงานได้")
-    

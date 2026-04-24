@@ -3,6 +3,7 @@ from typing import Annotated
 from sqlmodel import Session
 from sqlalchemy.exc import SQLAlchemyError
 from app.database import get_db
+from app.repository.master_data_repository import MasterDataRepository
 from app.services.project_services import ProjectServices
 
 router = APIRouter(prefix="/master")
@@ -13,7 +14,7 @@ async def get_master_faculty(
     db: Annotated[Session, Depends(get_db)]
 ):
     try:
-        faculty = await ProjectServices.get_master_faculties(db)
+        faculty = await MasterDataRepository.get_master_faculties(db)
         return faculty
     except SQLAlchemyError as e:
         print(f"DB Error (Faculty): {e}")
@@ -29,7 +30,7 @@ async def get_master_departments(
     db: Annotated[Session, Depends(get_db)]
 ):
     try:
-        departments = await ProjectServices.get_master_departments(db)
+        departments = await MasterDataRepository.get_master_departments(db)
         return departments
     except SQLAlchemyError as e:
         print(f"DB Error (Department): {e}")
@@ -45,7 +46,7 @@ async def get_master_degrees(
     db: Annotated[Session, Depends(get_db)]
 ):
     try:
-        degrees = await ProjectServices.get_master_degrees(db)
+        degrees = await MasterDataRepository.get_master_degrees(db)
         return degrees
     except SQLAlchemyError as e:
         print(f"DB Error (Degree): {e}")
@@ -61,7 +62,7 @@ async def get_master_advisors(
     db: Annotated[Session, Depends(get_db)]
 ):
     try:
-        advisors = await ProjectServices.get_master_advisors(db)
+        advisors = await MasterDataRepository.get_master_advisors(db)
         return advisors
     except SQLAlchemyError as e:
         print(f"DB Error (Advisor): {e}")
