@@ -26,7 +26,8 @@ class UserRepository:
             user_name_en=user_name_en,
             degree_id=degree_id,
             role=role,
-            email=email
+            email=email,
+            last_login_at=None
         )
         db.add(user)
         db.flush()

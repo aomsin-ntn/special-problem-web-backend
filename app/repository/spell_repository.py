@@ -91,7 +91,7 @@ class SpellRepository:
         }
     
     @staticmethod
-    def get_correction_by_incorrect(db, incorrect):
+    async def get_correction_by_incorrect(db, incorrect):
         return db.exec(
             select(CorrectionDictionary).where(
                 CorrectionDictionary.incorrect_word == incorrect
@@ -155,3 +155,10 @@ class SpellRepository:
 
         db.flush()
         return record
+    
+    @staticmethod
+    async def create_custom_word(db: Session, cus_word: str):
+        custom_word = CustomDictionary(cus_word=cus_word)
+        db.add(custom_word)
+        db.flush()
+        return custom_word

@@ -5,7 +5,7 @@ from sqlmodel import Session, select,or_, and_
 from app.models.project import Project
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.user import User
-from app.models.project_file import ProjectFile
+from app.models.project_file import ProjectFile, Status
 from app.models.keyword import Keyword
 from app.models.project_keyword import ProjectKeyword
 from app.models.project_author import ProjectAuthor
@@ -196,6 +196,7 @@ class ProjectRepository:
             .join(Keyword, ProjectKeyword.keyword_id == Keyword.keyword_id)
             .where(Project.project_id == project_id, Project.is_active == True)
         ).all()
+
         return result
     
     @staticmethod
@@ -319,14 +320,9 @@ class ProjectRepository:
         return project_file
     
     @staticmethod
-    async def get_project_file_by_hash(db: Session, file_hash: str):
+    async def get_project_file_by_hash(db, file_hash: str):
         return db.exec(
-            select(ProjectFile)
-            .join(Project, Project.file_id == ProjectFile.file_id)
-            .where(
-                ProjectFile.file_hash == file_hash,
-                Project.is_active == True
-            )
+            select(ProjectFile).where(ProjectFile.file_hash == file_hash)
         ).first()
     
     @staticmethod
@@ -343,10 +339,9 @@ class ProjectRepository:
         if not project_file:
             return None
 
-        project_file.status = "saved"
+        project_file.status = Status.SAVED
         db.add(project_file)
-        db.commit()
-        db.refresh(project_file)
+        db.flush()
 
         return project_file
 
@@ -386,19 +381,16 @@ class ProjectRepository:
     @staticmethod
     async def create_project_file(
         db: Session,
-        file_name: str,
-        file_path: str,
-        file_hash: str,
-        thumbnail_path: str
+        project_file_info: ProjectFile,
     ):
         project_file = ProjectFile(
             file_id=uuid4(),
-            file_name=file_name,
-            file_path=file_path,
-            file_hash=file_hash,
-            thumbnail_path=thumbnail_path,
+            file_name=project_file_info.file_name,
+            file_path=project_file_info.file_path,
+            file_hash=project_file_info.file_hash,
+            thumbnail_path=project_file_info.thumbnail_path,
             uploaded_at=datetime.utcnow(),
-            status="temp"
+            status=Status.TEMP
         )
 
         db.add(project_file)
@@ -493,6 +485,13 @@ class ProjectRepository:
         return project_keyword
     
     @staticmethod
+    async def update_project_file(db, project_file):
+        db.add(project_file)
+        db.commit()
+        db.refresh(project_file)
+        return project_file
+    
+    @staticmethod
     async def delete_project(db: Session, project_id: UUID):
         project = db.exec(
             select(Project).where(Project.project_id == project_id)
@@ -508,19 +507,25 @@ class ProjectRepository:
     
     @staticmethod
     async def delete_project_advisors_no_commit(db: Session, project_id: UUID):
-        advisors = await ProjectRepository.get_project_advisors_by_project_id(db, project_id)
+        rows = db.exec(
+            select(ProjectAdvisor)
+            .where(ProjectAdvisor.project_id == project_id)
+        ).all()
 
-        for advisor in advisors:
-            db.delete(advisor)
+        for row in rows:
+            db.delete(row)
 
         db.flush()
 
     @staticmethod
     async def delete_project_keywords_no_commit(db: Session, project_id: UUID):
-        project_keywords = await ProjectRepository.get_project_keywords_by_project_id(db, project_id)
+        rows = db.exec(
+            select(ProjectKeyword)
+            .where(ProjectKeyword.project_id == project_id)
+        ).all()
 
-        for project_keyword in project_keywords:
-            db.delete(project_keyword)
+        for row in rows:
+            db.delete(row)
 
         db.flush()
 
@@ -528,7 +533,7 @@ class ProjectRepository:
     async def get_expired_temp_files(db: Session, expired_time: datetime):
         return db.exec(
             select(ProjectFile).where(
-                ProjectFile.status == "temp",
+                ProjectFile.status == Status.TEMP,
                 ProjectFile.uploaded_at < expired_time
             )
         ).all()
@@ -559,21 +564,14 @@ class ProjectRepository:
             select(Keyword)      
         ).all()
         return keywords  
-
-
-
     
-
-
-
-    
-    
-
-
-
-
-
-
- 
-
-    
+    @staticmethod
+    async def get_active_project_by_file_id(db: Session, file_id: UUID):
+        project =db.exec(
+            select(Project)
+            .where(
+                Project.file_id == file_id,
+                Project.is_active == True
+            )
+        ).first()
+        return project
