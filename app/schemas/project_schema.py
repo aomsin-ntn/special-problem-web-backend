@@ -13,6 +13,7 @@ class KeywordInput(BaseModel):
     keyword_text_en: str
 
 class FileInfoInput(BaseModel):
+    file_id: UUID
     file_path: str
     save_name: str
     thumbnail_path: str
