@@ -5,9 +5,9 @@ class ExtractServices:
     # ลบพวก .* หรือเงื่อนไขที่ซ้อนกันเยอะๆ ออก เพื่อป้องกัน Regex Error
     STOP_GENERAL = r'(?:ชื่อนักศึกษา|ชื่อผู้จัดทำ|ผู้จัดทำ|Students?|ปริญญา|ภาควิชา|คณะ|มหาวิทยาลัย|มหาวิทลัย|ปีการศึกษา|อาจารย์|บทคัดย่อ|คำสำคัญ|Degree|Department|Faculty|School|University|Academic|Advisor|Abstr?act|Keywords?|Title|\||$)'
 
-    STOP_TITLE = r'(?:ชื่อนักศึกษา|ชื่อผู้จัดทำ|ผู้จัดทำ|Students?|โดย|By|เสนอโดย|\||$)'
+    STOP_TITLE = r'(?:ชื่อนักศึกษา|ชื่อผู้จัดทำ|ผู้จัดทำ|Students?|เสนอโดย|\||$)'
 
-    STOP_ABSTRACT = r'(?:คำสำคัญ|Keywords?|Keywors|หัวข้อ|Title|\||$)'
+    STOP_ABSTRACT = r'(?:คำสำคัญ|Keywords?|Keywors|\||$)'
 
     TH_PATTERNS = {
         "title_th": r'(?:หัวข้อ\s*(?:โครงงาน|ปัญหา|สหกิจ)พิเศษ|หัวข้อ|เรื่อง|โครงการสหกิจศึกษา|สหกิจศึกษา|โครงการ)[:\s]*(.*?)(?=' + STOP_TITLE + ')',

@@ -129,9 +129,19 @@ class ProjectServices:
         return final_result
     
     @staticmethod
+    async def update_project_file(db: Session, project_file):
+        updated_file = await ProjectRepository.update_project_file(db, project_file)
+        return updated_file
+    
+    @staticmethod
     async def create_project_file(db: Session, file_data):
         project_file = await ProjectRepository.create_project_file(db, file_data)
         return project_file
+    
+    @staticmethod
+    async def get_active_project_by_file_id(db: Session, file_id: UUID):
+        project = await ProjectRepository.get_active_project_by_file_id(db, file_id)
+        return project
 
     @staticmethod
     async def get_most_downloaded_projects(db: Session):
@@ -225,6 +235,9 @@ class ProjectServices:
     def find_match(target_th, target_en, items, th_attr, en_attr):
         norm_target_th = ProjectServices.normalize(target_th)
         norm_target_en = ProjectServices.normalize(target_en)
+
+        if len(norm_target_th) < 3 and len(norm_target_en) < 3:
+            return None
 
         best_match = None
         highest_score = 0
@@ -351,12 +364,6 @@ class ProjectServices:
                 continue
 
             avg_score = sum(used_scores) / len(used_scores)
-
-            print(
-                f"[Keyword Match Debug] "
-                f"TH={score_th:.2f} EN={score_en:.2f} AVG={avg_score:.2f} "
-                f"| TH='{target_th}' EN='{target_en}'"
-            )
 
             if len(used_scores) == 2:
                 is_match = score_th >= 0.9 and score_en >= 0.9
@@ -590,9 +597,6 @@ class ProjectServices:
                             keyword_order=idx
                         )
                         used_keyword_ids.add(target_kw_id)
-
-            db.commit()
-
             return {
                 "status": "success",
                 "project_id": str(project.project_id)

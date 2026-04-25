@@ -60,6 +60,11 @@ class SpellServices:
 
         return correction
     
+    @staticmethod
+    async def save_custom_word(db: Session, cus_word: str):
+        custom_word = await SpellRepository.create_custom_word(db, cus_word)
+        return custom_word
+    
     def __init__(self, error_dict=None, custom_dict=None):
         self.spell_cache = {}
         self.error_dict = {}
@@ -142,6 +147,17 @@ class SpellServices:
             if word_to_check in valid_dict:
                 stats["correct"] += 1
                 continue
+            custom_suggestion, custom_score = self.get_custom_suggestion(word, threshold=0.7)
+
+            if custom_suggestion:
+                stats["incorrect"] += 1
+                stats["wrong_words"].append({
+                    "word": word,
+                    "suggestions": [custom_suggestion],
+                    "source": "custom_dict_similarity",
+                    "score": round(custom_score, 2)
+                })
+                continue
 
             # 4. Priority 3: ถ้าไม่เจอเลย ให้ถาม Suggestion Engine
             sug = self.get_suggestions(word, is_eng)
@@ -172,8 +188,69 @@ class SpellServices:
 
         # 3. ตัดสินใจเลือกอันที่ error_percent น้อยกว่า
         if res1["error_percent"] <= res2["error_percent"]:
-            
+            print("Selected EXTRACTED TEXT (lower error rate)")
+            print(f"Error Percent: {res1['error_percent']}% (Extracted) vs {res2['error_percent']}% (OCR)")
             return text1, res1  # ส่งคืนข้อความชุดที่ 1 และรายงานสรุป
         else: 
+            print("Selected OCR TEXT (lower error rate)")
+            print(f"Error Percent: {res1['error_percent']}% (Extracted) vs {res2['error_percent']}% (OCR)")
             return text2, res2  # ส่งคืนข้อความชุดที่ 2 และรายงานสรุป
         
+    def get_custom_suggestion(self, word: str, threshold=0.7):
+        if not word or len(word.strip()) < 2:
+            return None, 0
+
+        best_match = None
+        best_score = 0
+
+        for custom_word in self.custom_segmentation_dict:
+            score = difflib.SequenceMatcher(
+                None,
+                word.lower(),
+                str(custom_word).lower()
+            ).ratio()
+
+            if score > best_score:
+                best_score = score
+                best_match = custom_word
+
+        if best_score >= threshold:
+            return best_match, best_score
+
+        return None, best_score
+    
+    def should_mark_wrong(tokens, i, valid_words):
+        word = tokens[i].strip()
+
+        if not word:
+            return False
+
+        prev_word = tokens[i - 1].strip() if i > 0 else ""
+        next_word = tokens[i + 1].strip() if i < len(tokens) - 1 else ""
+
+        # 🔥 เคสสำคัญ: ตัวเดียว + คำถัดไป
+        if len(word) == 1 and next_word:
+            merged = word + next_word
+            if merged in valid_words:
+                return False   # ไม่ผิด
+
+        # 🔥 ปกติ
+        if word in valid_words:
+            return False
+
+        # รวมคำ
+        candidates = []
+
+        if prev_word:
+            candidates.append(prev_word + word)
+
+        if next_word:
+            candidates.append(word + next_word)
+
+        if prev_word and next_word:
+            candidates.append(prev_word + word + next_word)
+
+        if any(c in valid_words for c in candidates):
+            return False
+
+        return True

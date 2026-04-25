@@ -1,13 +1,14 @@
-from dataclasses import fields
+from datetime import datetime
 from fastapi import HTTPException
 
-from app.models.project_file import ProjectFile
+from app.models.project_file import ProjectFile, Status
 from app.repository.master_data_repository import MasterDataRepository
-from app.repository.project_repository import ProjectRepository
 from app.services.file_services import FileServices
 from app.services.ocr_services import OCRServices
 from app.services.text_services import TextServices
 from app.services.project_services import ProjectServices
+
+from sqlalchemy.exc import IntegrityError
 
 from app.config import settings
 
@@ -38,25 +39,80 @@ class UploadServices:
     async def handle_upload(self, file, pages, db, current_user):
         # save file
         start_time = time.time()
-        dest, save_name, file_hash = self.file_services.save(file)
-        thumbnail_img = self.ocr_services.get_thumbnail(str(dest))
-        thumbnail_path = self.file_services.save_thumbnail(thumbnail_img)
-        project_file = ProjectFile(
-            file_path=str(dest),
-            file_name=save_name,
-            file_hash=file_hash,
-            thumbnail_path=thumbnail_path,
-        )
-        project_file_info = await ProjectServices.create_project_file(db, project_file)
+        dest, save_name, file_hash = self.file_services.save(file) 
 
         existing_file = await ProjectServices.get_project_file_by_hash(db, file_hash)
   
         if existing_file:
-            raise HTTPException(
-                status_code=409,
-                detail="This file has already been uploaded"
+
+            active_project = await ProjectServices.get_active_project_by_file_id(
+                db=db,
+                file_id=existing_file.file_id
             )
-        # thumbnail
+
+            if active_project:
+                self.file_services.safe_delete(str(dest))
+                raise HTTPException(409, "This file is already used by an active project")
+
+            # ไม่สน status แล้ว → reuse ได้หมด
+            self.file_services.safe_delete(existing_file.file_path)
+            self.file_services.safe_delete(existing_file.thumbnail_path)
+
+            thumbnail_img = self.ocr_services.get_thumbnail(str(dest))
+            thumbnail_path = self.file_services.save_thumbnail(thumbnail_img)
+
+            existing_file.file_path = str(dest)
+            existing_file.file_name = save_name
+            existing_file.thumbnail_path = str(thumbnail_path)
+            existing_file.uploaded_at = datetime.utcnow()
+            existing_file.status = Status.TEMP
+
+            project_file_info = await ProjectServices.update_project_file(db, existing_file)
+
+        else:
+            thumbnail_img = self.ocr_services.get_thumbnail(str(dest))
+            thumbnail_path = self.file_services.save_thumbnail(thumbnail_img)
+
+            project_file = ProjectFile(
+                file_path=str(dest),
+                file_name=save_name,
+                file_hash=file_hash,
+                thumbnail_path=str(thumbnail_path),
+                status=Status.TEMP
+            )
+
+            try:
+                project_file_info = await ProjectServices.create_project_file(db, project_file)
+            except IntegrityError:
+                db.rollback()
+
+                existing_file = await ProjectServices.get_project_file_by_hash(db, file_hash)
+
+                if existing_file:
+                    active_project = await ProjectServices.get_active_project_by_file_id(
+                        db=db,
+                        file_id=existing_file.file_id
+                    )
+
+                    if active_project:
+                        self.file_services.safe_delete(str(dest))
+                        self.file_services.safe_delete(str(thumbnail_path))
+                        raise HTTPException(409, "This file is already used by an active project")
+
+                    self.file_services.safe_delete(existing_file.file_path)
+                    self.file_services.safe_delete(existing_file.thumbnail_path)
+
+                    existing_file.file_path = str(dest)
+                    existing_file.file_name = save_name
+                    existing_file.thumbnail_path = str(thumbnail_path)
+                    existing_file.uploaded_at = datetime.utcnow()
+                    existing_file.status = Status.TEMP
+
+                    project_file_info = await ProjectServices.update_project_file(db, existing_file)
+                else:
+                    self.file_services.safe_delete(str(dest))
+                    self.file_services.safe_delete(str(thumbnail_path))
+                    raise HTTPException(status_code=409, detail="This file has already been uploaded")
 
 
         # OCR + extract
@@ -166,10 +222,10 @@ class UploadServices:
         return {
             "file_info": {
                 "file_id": project_file_info.file_id,
-                "file_path": str(dest),
-                "save_name": save_name,
-                "thumbnail_path": str(thumbnail_path),
-                "file_hash": file_hash  
+                "file_path": project_file_info.file_path,
+                "save_name": project_file_info.file_name,
+                "thumbnail_path": project_file_info.thumbnail_path,
+                "file_hash": project_file_info.file_hash
             },
             "form_data": {
                 "title_th": fields.get("title_th", ""),

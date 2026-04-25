@@ -39,7 +39,7 @@ class FileServices:
     
     @staticmethod
     async def cleanup_temp_files(db: Session):
-        expired_time = datetime.utcnow() - timedelta(hours=1)
+        expired_time = datetime.utcnow() - timedelta(hours=24)
 
         temp_files = await ProjectServices.get_expired_temp_files(db, expired_time)
 
@@ -56,3 +56,13 @@ class FileServices:
             await ProjectServices.delete_project_file(db, file.file_id)
 
         db.commit()
+
+    @staticmethod
+    def safe_delete(path: str | None):
+        if not path:
+            return
+
+        file_path = Path(path)
+
+        if file_path.exists() and file_path.is_file():
+            file_path.unlink()

@@ -1,5 +1,6 @@
 # text_services.py
 from deepcut import deepcut
+import re
 
 from app.services.spell_services import SpellServices
 from app.services.extract_services import ExtractServices
@@ -64,20 +65,69 @@ class TextServices:
         print(report_spell_res)
 
         return fields, report_spell_res
+    
+    @staticmethod
+    def _thai_ratio(text: str) -> float:
+        if not text:
+            return 0
+        thai_chars = re.findall(r"[ก-๙]", text)
+        return len(thai_chars) / len(text)
 
+    @staticmethod
+    def is_broken_text(text: str) -> bool:
+        if not text:
+            return False
+
+        length = max(len(text), 1)
+
+        thai_count = len(re.findall(r"[ก-๙]", text))
+        weird_count = len(re.findall(r"[^\x00-\x7Fก-๙]", text))
+
+        thai_ratio = thai_count / length
+        weird_ratio = weird_count / length
+
+        # ตัวอักษรแปลกที่เจอบ่อยจาก PDF extract พัง
+        broken_patterns = [
+            r"ǰ",
+            r"Ĵ",
+            r"\*[A-Z]+",      # เช่น *OTUJUVUF
+            r"[A-Z]{2,}ǰ",
+            r"[A-Za-z]+ǰ",
+        ]
+
+        has_broken_pattern = any(
+            re.search(pattern, text)
+            for pattern in broken_patterns
+        )
+
+        # ไทยพัง หรือ อังกฤษพัง
+        return (
+            (weird_ratio > 0.03 and thai_ratio < 0.4)
+            or has_broken_pattern
+        )
+    
     def _select_best_text(self, ext_text, ocr_text, spell_services):
-        """
-        คืนค่า:
-        - best_text
-        - spell_info ของ best_text นั้น
-        """
+        ext_text = TextServices.clean_ocr_noise(ext_text)
+        ocr_text = TextServices.clean_ocr_noise(ocr_text)
 
-        # มีทั้ง ext และ ocr -> ใช้ compare ซึ่งตรวจคำผิดให้แล้ว
-        if ext_text and ocr_text:
+        ext_bad = TextServices.is_broken_text(ext_text)
+        ocr_bad = TextServices.is_broken_text(ocr_text)
+
+        # ถ้า extracted พัง แต่ OCR ไม่พัง → ใช้ OCR
+        if ext_bad and not ocr_bad and ocr_text.strip():
+            best_text = ocr_text
+
+        # ถ้า OCR พัง แต่ extracted ไม่พัง → ใช้ extracted
+        elif ocr_bad and not ext_bad and ext_text.strip():
+            best_text = ext_text
+
+        # ถ้าทั้งคู่ไม่พัง → ค่อย compare error rate
+        elif not ext_bad and not ocr_bad and ext_text and ocr_text:
             return spell_services.compare(ext_text, ocr_text)
 
-        # มีแค่อย่างใดอย่างหนึ่ง
-        best_text = ext_text or ocr_text or ""
+        # fallback
+        else:
+            best_text = ocr_text if ext_bad and ocr_text.strip() else (ext_text or ocr_text)
 
         if not best_text.strip():
             return "", {
@@ -149,7 +199,34 @@ class TextServices:
             if found_words:
                 report_spell_res.append({
                     "field": field_name,
-                    "wrong_words": found_words
+                    "stats": {
+                        "total": len(field_tokens),
+                        "incorrect": len(found_words),
+                        "error_percent": round((len(found_words) / len(field_tokens)) * 100, 2) if field_tokens else 0,
+                        "wrong_words": found_words
+                    }
                 })
 
         return report_spell_res
+    
+    @staticmethod
+    def clean_ocr_noise(text: str) -> str:
+        if not text:
+            return ""
+
+        text = text.replace("ฺ", "")
+        text = re.sub(r'[\x00-\x1F\x7F]', ' ', text)
+        text = text.replace("|", " ").replace("\\", " ")
+
+        # 🔥 punctuation fix
+        text = re.sub(r'\.{2,}', '.', text)
+        text = re.sub(r',{2,}', ',', text)
+        text = re.sub(r':{2,}', ':', text)
+        text = re.sub(r'-{2,}', '-', text)
+        text = re.sub(r'\s+([.,:;])', r'\1', text)
+        text = re.sub(r'([.,:;])([^\s])', r'\1 \2', text)
+
+        text = re.sub(r'[ \t]+', ' ', text)
+
+        return text.strip()
+    
