@@ -48,3 +48,16 @@ async def get_dictionary_report_api(
         print(f"Error fetching dictionary: {e}")
         raise HTTPException(status_code=500, detail="ไม่สามารถดึงข้อมูลรายงานได้")
     
+@router.post("/create_custom_word")
+async def create_custom_word(
+    db: Annotated[Session, Depends(get_db)],
+    cus_word: str,
+    authorized_user: User = Depends(require_role([Role.STAFF]))
+):
+    try:
+        custom_word = await SpellServices.save_custom_word(db, cus_word)
+        return custom_word
+    except Exception as e:
+        db.rollback()
+        print(f"Error creating custom word: {e}")
+        raise HTTPException(status_code=500, detail="ไม่สามารถสร้างคำเฉพาะทางได้")

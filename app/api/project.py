@@ -140,6 +140,7 @@ async def save_project(
         # โยนภาระไปให้ Service จัดการให้หมด
         ProjectServices.validate_extracted_data(data.data.model_dump())
         result = await project_service.save_project(data.data, data.old_data, db, current_user)
+        db.commit()  # Commit หลังจากทุกอย่างผ่านการตรวจสอบและบันทึกใน Service แล้ว
         print("----------SAVE RESULT DEBUG----------")
         print(data)
         return result
@@ -178,7 +179,7 @@ async def get_project_details_check_permission(
             detail="เกิดข้อผิดพลาดในการดึงข้อมูลจากฐานข้อมูล"
         )
 
-@router.post("/update_projecta/{project_id}")
+@router.post("/update_project/{project_id}")
 async def update_project(
     project_id: UUID,
     data: ProjectSubmitRequest, 

@@ -100,7 +100,6 @@ async def callback(db: Annotated[AsyncSession, Depends(get_db)], request: Reques
                 target_url = f"{frontend_url}first-login/student?token={signup_token}"
             else:
                 target_url = f"{frontend_url}first-login/staff?token={signup_token}"
-                
             return RedirectResponse(url=target_url)
 
         
