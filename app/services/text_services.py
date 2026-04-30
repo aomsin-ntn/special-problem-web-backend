@@ -34,7 +34,7 @@ class TextServices:
             selected_texts.append(best_text)
 
         # 2. รวม best_text ทั้งหมด
-        full_text = " ".join(selected_texts)
+        full_text = "\n\n---PAGE---\n\n".join(selected_texts)
 
         print("----------Raw DATA ----------")
         print(full_text)
@@ -174,21 +174,22 @@ class TextServices:
         if not text:
             return ""
 
+        text = str(text)
+
         text = text.replace("ฺ", "")
-        text = re.sub(r'[\x00-\x1F\x7F]', ' ', text)
-        text = text.replace("|", " ").replace("\\", " ")
+        text = text.replace("|", "\n")
+        text = text.replace("\\", " ")
 
-        # 🔥 punctuation fix
-        text = re.sub(r'\.{2,}', '.', text)
-        text = re.sub(r',{2,}', ',', text)
-        text = re.sub(r':{2,}', ':', text)
-        text = re.sub(r'-{2,}', '-', text)
-        text = re.sub(r'\s+([.,:;])', r'\1', text)
-        text = re.sub(r'([.,:;])([^\s])', r'\1 \2', text)
+        # ลบ control chars แต่ไม่ลบ newline
+        text = re.sub(r"[\r\t]+", " ", text)
 
-        text = re.sub(r'[ \t]+', ' ', text)
+        # clean ทีละบรรทัด
+        lines = []
+        for line in text.split("\n"):
+            line = re.sub(r"[ ]+", " ", line).strip()
+            if line:
+                lines.append(line)
 
-        return text.strip()
-    
+        return "\n".join(lines)
 
     

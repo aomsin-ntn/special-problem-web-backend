@@ -124,13 +124,13 @@ class ProjectServices:
         return final_result
     
     @staticmethod
-    async def update_project_file(db: Session, project_file):
+    async def update_project_file(db: Session, project_file: ProjectFile):
         updated_file = await ProjectRepository.update_project_file(db, project_file)
         return updated_file
     
     @staticmethod
-    async def create_project_file(db: Session, file_data):
-        project_file = await ProjectRepository.create_project_file(db, file_data)
+    async def create_project_file(db: Session, project_file: ProjectFile):
+        project_file = await ProjectRepository.create_project_file(db, project_file)
         return project_file
     
     @staticmethod
