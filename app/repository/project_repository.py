@@ -375,13 +375,13 @@ class ProjectRepository:
     @staticmethod
     async def create_project_file(
         db: Session,
-        project_file_info: ProjectFile,
+        project_file: ProjectFile,
     ):
         project_file = ProjectFile(
             file_id=uuid4(),
-            file_name=project_file_info.file_name,
-            file_path=project_file_info.file_path,
-            thumbnail_path=project_file_info.thumbnail_path,
+            file_name=project_file.file_name,
+            file_path=project_file.file_path,
+            thumbnail_path=project_file.thumbnail_path,
             uploaded_at=datetime.utcnow(),
             status=Status.TEMP
         )
