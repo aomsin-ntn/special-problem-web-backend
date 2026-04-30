@@ -320,12 +320,6 @@ class ProjectRepository:
         return project_file
     
     @staticmethod
-    async def get_project_file_by_hash(db, file_hash: str):
-        return db.exec(
-            select(ProjectFile).where(ProjectFile.file_hash == file_hash)
-        ).first()
-    
-    @staticmethod
     async def get_project_file_by_id(db: Session, file_id: UUID):
         return db.exec(
             select(ProjectFile)
@@ -387,7 +381,6 @@ class ProjectRepository:
             file_id=uuid4(),
             file_name=project_file_info.file_name,
             file_path=project_file_info.file_path,
-            file_hash=project_file_info.file_hash,
             thumbnail_path=project_file_info.thumbnail_path,
             uploaded_at=datetime.utcnow(),
             status=Status.TEMP
@@ -404,14 +397,12 @@ class ProjectRepository:
         db: Session,
         file_name: str,
         file_path: str,
-        file_hash: str,
         thumbnail_path: str | None = None
     ):
         project_file = ProjectFile(
             file_id=uuid4(),
             file_name=file_name,
             file_path=file_path,
-            file_hash=file_hash,
             thumbnail_path=thumbnail_path,
             uploaded_at=datetime.utcnow()
         )
@@ -575,3 +566,41 @@ class ProjectRepository:
             )
         ).first()
         return project
+
+    @staticmethod
+    async def get_active_projects_by_student_ids(db: Session, student_ids: list[str]):
+        if not student_ids:
+            return []
+
+        return db.exec(
+            select(Project, User)
+            .join(ProjectAuthor, Project.project_id == ProjectAuthor.project_id)
+            .join(User, User.user_id == ProjectAuthor.user_id)
+            .where(
+                User.student_id.in_(student_ids),
+                Project.is_active == True
+            )
+        ).all()
+
+
+    @staticmethod
+    async def has_active_project_by_user_id(db: Session, user_id: UUID):
+        return db.exec(
+            select(Project)
+            .join(ProjectAuthor, Project.project_id == ProjectAuthor.project_id)
+            .where(
+                ProjectAuthor.user_id == user_id,
+                Project.is_active == True
+            )
+        ).first()
+    
+    @staticmethod
+    async def has_active_project_by_user_id(db: Session, user_id: UUID):
+        return db.exec(
+            select(Project)
+            .join(ProjectAuthor, Project.project_id == ProjectAuthor.project_id)
+            .where(
+                ProjectAuthor.user_id == user_id,
+                Project.is_active == True
+            )
+        ).first()

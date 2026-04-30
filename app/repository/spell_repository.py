@@ -11,10 +11,18 @@ class SpellRepository:
     @staticmethod
     async def get_error_dict(db: Session):
         result = db.exec(
-            select(IncorrectWord,CorrectionDictionary)
-            .join(CorrectionDictionary,IncorrectWord.word_dic_id == CorrectionDictionary.word_dic_id)
-            .where(IncorrectWord.count >= 10 )
+            select(IncorrectWord, CorrectionDictionary)
+            .join(
+                CorrectionDictionary,
+                IncorrectWord.word_dic_id == CorrectionDictionary.word_dic_id
+            )
+            .where(CorrectionDictionary.count >= 10)
+            .order_by(
+                CorrectionDictionary.count.desc(),
+                IncorrectWord.count.desc()
+            )
         ).all()
+
         return result
     
     @staticmethod
