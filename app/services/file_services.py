@@ -3,7 +3,6 @@ from pathlib import Path
 from uuid import uuid4
 import shutil
 import cv2
-import hashlib
 
 from app.models.session import Session
 from app.services.project_services import ProjectServices
@@ -17,20 +16,15 @@ class FileServices:
         self.thumbnail_dir.mkdir(parents=True, exist_ok=True)
 
     def save(self, file):
-            ext = Path(file.filename).suffix
-            save_name = f"{uuid4().hex}{ext}"
-            dest = self.upload_dir / save_name
+        ext = Path(file.filename).suffix
+        save_name = f"{uuid4().hex}{ext}"
+        dest = self.upload_dir / save_name
 
-            hash_obj = hashlib.sha256()
+        with dest.open("wb") as buffer:
+            while chunk := file.file.read(1024 * 1024):
+                buffer.write(chunk)
 
-            with dest.open("wb") as buffer:
-                while chunk := file.file.read(1024 * 1024):
-                    hash_obj.update(chunk)
-                    buffer.write(chunk)
-
-            file_hash = hash_obj.hexdigest()
-
-            return dest, save_name, file_hash
+        return dest, save_name
 
     def save_thumbnail(self, image):
         thumbnail_path = self.thumbnail_dir / f"{uuid4().hex}_thumb.png"

@@ -15,14 +15,14 @@ class TextServices:
         extract_services = ExtractServices()
 
         selected_texts = []
-        selected_wrong_words = []
 
-        # 1. เลือก best_text ต่อหน้า และเก็บคำผิดจากหน้านั้น
+        # 1. เลือก best_text ต่อหน้าอย่างเดียว
+        # ยังไม่เก็บคำผิดตรงนี้ เพราะยังไม่รู้ว่า text อยู่ field ไหน
         for page_index, res in enumerate(results):
             ext_text = res.get("ext", "") or ""
             ocr_text = res.get("ocr", "") or ""
 
-            best_text, spell_info = self._select_best_text(
+            best_text = self._select_best_text_only(
                 ext_text=ext_text,
                 ocr_text=ocr_text,
                 spell_services=spell_services
@@ -33,31 +33,18 @@ class TextServices:
 
             selected_texts.append(best_text)
 
-            for wrong_word in spell_info.get("wrong_words", []) or []:
-                word_text = wrong_word.get("word")
-
-                if not word_text:
-                    continue
-
-                selected_wrong_words.append({
-                    "page": page_index + 1,
-                    "word": word_text,
-                    "suggestions": wrong_word.get("suggestions", []),
-                    "source": wrong_word.get("source")
-                })
-
-        # 2. รวมข้อความ แล้ว extract fields
+        # 2. รวม best_text ทั้งหมด
         full_text = " ".join(selected_texts)
 
         print("----------Raw DATA ----------")
         print(full_text)
 
+        # 3. Extract fields จาก text ที่เลือกแล้ว
         fields = extract_services.extract_fields(full_text)
 
-        # 3. เอาคำผิดทั้งหมด ไป map ว่าอยู่ field ไหน
-        report_spell_res = self._map_wrong_words_to_fields(
+        # 4. ค่อย spell check แยกตาม field
+        report_spell_res = self._spell_check_fields(
             fields=fields,
-            wrong_words=selected_wrong_words,
             spell_services=spell_services
         )
 
@@ -65,13 +52,6 @@ class TextServices:
         print(report_spell_res)
 
         return fields, report_spell_res
-    
-    @staticmethod
-    def _thai_ratio(text: str) -> float:
-        if not text:
-            return 0
-        thai_chars = re.findall(r"[ก-๙]", text)
-        return len(thai_chars) / len(text)
 
     @staticmethod
     def is_broken_text(text: str) -> bool:
@@ -106,7 +86,7 @@ class TextServices:
             or has_broken_pattern
         )
     
-    def _select_best_text(self, ext_text, ocr_text, spell_services):
+    def _select_best_text_only(self, ext_text, ocr_text, spell_services):
         ext_text = TextServices.clean_ocr_noise(ext_text)
         ocr_text = TextServices.clean_ocr_noise(ocr_text)
 
@@ -115,36 +95,27 @@ class TextServices:
 
         # ถ้า extracted พัง แต่ OCR ไม่พัง → ใช้ OCR
         if ext_bad and not ocr_bad and ocr_text.strip():
-            best_text = ocr_text
+            return ocr_text
 
         # ถ้า OCR พัง แต่ extracted ไม่พัง → ใช้ extracted
-        elif ocr_bad and not ext_bad and ext_text.strip():
-            best_text = ext_text
+        if ocr_bad and not ext_bad and ext_text.strip():
+            return ext_text
 
-        # ถ้าทั้งคู่ไม่พัง → ค่อย compare error rate
-        elif not ext_bad and not ocr_bad and ext_text and ocr_text:
-            return spell_services.compare(ext_text, ocr_text)
+        # ถ้าทั้งคู่ไม่พัง → เทียบ error rate เพื่อเลือกตัวที่ดีกว่า
+        if not ext_bad and not ocr_bad and ext_text.strip() and ocr_text.strip():
+            best_text, _spell_info = spell_services.compare(ext_text, ocr_text)
+            return best_text
 
         # fallback
-        else:
-            best_text = ocr_text if ext_bad and ocr_text.strip() else (ext_text or ocr_text)
+        if ext_text.strip():
+            return ext_text
 
-        if not best_text.strip():
-            return "", {
-                "wrong_words": [],
-                "error_percent": 0
-            }
+        if ocr_text.strip():
+            return ocr_text
 
-        tokens = deepcut.tokenize(
-            spell_services.clean_text(best_text),
-            spell_services.custom_segmentation_dict
-        )
+        return ""
 
-        spell_info = spell_services.check_spelling(tokens)
-
-        return best_text, spell_info
-
-    def _map_wrong_words_to_fields(self, fields, wrong_words, spell_services):
+    def _spell_check_fields(self, fields, spell_services):
         fields_to_check = [
             "title_th",
             "title_en",
@@ -162,7 +133,7 @@ class TextServices:
             if not field_value:
                 continue
 
-            # รองรับทั้ง string และ list เช่น keywords
+            # รองรับ string และ list เช่น keywords
             if isinstance(field_value, list):
                 field_text = " ".join(str(v) for v in field_value if v)
             elif isinstance(field_value, str):
@@ -170,40 +141,29 @@ class TextServices:
             else:
                 continue
 
-            # tokenize field นี้ครั้งเดียว
+            field_text = spell_services.clean_text(field_text)
+
+            if not field_text:
+                continue
+
             field_tokens = deepcut.tokenize(
-                spell_services.clean_text(field_text),
+                field_text,
                 spell_services.custom_segmentation_dict
             )
-            field_token_set = set(field_tokens)
 
-            found_words = []
-            seen_words_in_field = set()
+            spell_info = spell_services.check_spelling(field_tokens)
 
-            # เอาคำผิดทั้งหมดมาเช็คว่าอยู่ใน field นี้ไหม
-            for wrong_word in wrong_words:
-                word_text = wrong_word.get("word")
+            wrong_words = spell_info.get("wrong_words", []) or []
 
-                if not word_text:
-                    continue
-
-                # กันคำซ้ำเฉพาะใน field เดียวกัน
-                if word_text in field_token_set and word_text not in seen_words_in_field:
-                    found_words.append({
-                        "word": word_text,
-                        "suggestions": wrong_word.get("suggestions", []),
-                        "source": wrong_word.get("source")
-                    })
-                    seen_words_in_field.add(word_text)
-
-            if found_words:
+            if wrong_words:
                 report_spell_res.append({
                     "field": field_name,
                     "stats": {
-                        "total": len(field_tokens),
-                        "incorrect": len(found_words),
-                        "error_percent": round((len(found_words) / len(field_tokens)) * 100, 2) if field_tokens else 0,
-                        "wrong_words": found_words
+                        "total": spell_info.get("total", 0),
+                        "correct": spell_info.get("correct", 0),
+                        "incorrect": spell_info.get("incorrect", 0),
+                        "error_percent": spell_info.get("error_percent", 0),
+                        "wrong_words": wrong_words
                     }
                 })
 
@@ -229,4 +189,6 @@ class TextServices:
         text = re.sub(r'[ \t]+', ' ', text)
 
         return text.strip()
+    
+
     

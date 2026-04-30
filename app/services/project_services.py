@@ -92,11 +92,6 @@ class ProjectServices:
     async def get_keywords(db: Session):
         keywords = await ProjectRepository.get_keywords(db)
         return keywords
-    
-    @staticmethod
-    async def get_project_file_by_hash(db: Session, file_hash: str):
-        project_file = await ProjectRepository.get_project_file_by_hash(db, file_hash)
-        return project_file
 
     @staticmethod
     async def get_project_details(db: Session, project_id: int):
@@ -165,62 +160,7 @@ class ProjectServices:
 
         final_result = list(result.values())
         return final_result
-    
-    @staticmethod
-    def is_match_90(text1: str, text2: str) -> bool:
-        norm1 = ProjectServices.normalize(text1)
-        norm2 = ProjectServices.normalize(text2)
 
-        if not norm1 or not norm2:
-            return False
-
-        score = difflib.SequenceMatcher(None, norm1, norm2).ratio()
-        return score >= 0.9
-
-    @staticmethod
-    async def check_duplicate_project(db, fields):
-        title_th = fields.get("title_th") or ""
-        title_en = fields.get("title_en") or ""
-        year = fields.get("academic_year_ce") or ""
-
-        input_students = fields.get("students", []) or []
-
-        projects = await ProjectRepository.get_active_projects_for_duplicate_check(
-            db=db,
-            year=year
-        )
-
-        for project in projects:
-            title_match = (
-                ProjectServices.is_match_90(title_th, project.title_th)
-                or ProjectServices.is_match_90(title_en, project.title_en)
-            )
-
-            if not title_match:
-                continue
-
-            db_students = await ProjectRepository.get_project_students(
-                db=db,
-                project_id=project.project_id
-            )
-
-            for input_student in input_students:
-                input_th = input_student.get("student_name_th") or ""
-                input_en = input_student.get("student_name_en") or ""
-
-                for row in db_students:
-                    user = row.User if hasattr(row, "User") else row[1]
-
-                    student_match = (
-                        ProjectServices.is_match_90(input_th, user.user_name_th)
-                        or ProjectServices.is_match_90(input_en, user.user_name_en)
-                    )
-
-                    if student_match:
-                        return project
-
-        return None
-    
     @staticmethod
     def normalize(text):
         if not text: return ""
@@ -405,6 +345,12 @@ class ProjectServices:
                         data.academic_year_be = str(ce + 543)
                 except ValueError:
                     pass
+
+            await ProjectServices.validate_project_submission_owner_and_duplicate(
+                db=db,
+                data=data,
+                current_user=current_user
+            )
 
             fields_to_check = [
                 "title_th",
@@ -811,3 +757,88 @@ class ProjectServices:
                     "hint": "OCR might have read incorrectly, or there's no English field available"
                 }
             )
+        
+    @staticmethod
+    def normalize_student_id(student_id: str | None) -> str:
+        if not student_id:
+            return ""
+        return re.sub(r"\D", "", str(student_id).strip())
+
+
+    @staticmethod
+    def extract_student_ids_from_submit(data: ProjectSubmitRequest) -> list[str]:
+        student_ids = []
+
+        for s in data.students or []:
+            sid = ProjectServices.normalize_student_id(getattr(s, "student_id", None))
+            if sid:
+                student_ids.append(sid)
+
+        # กันซ้ำแต่รักษาลำดับ
+        return list(dict.fromkeys(student_ids))
+    
+    @staticmethod
+    async def check_current_user_has_project(db: Session, current_user):
+        project = await ProjectRepository.has_active_project_by_user_id(
+            db=db,
+            user_id=current_user.user_id
+        )
+
+        return {
+            "has_project": project is not None,
+            "project_id": str(project.project_id) if project else None
+        }
+    
+    @staticmethod
+    async def validate_project_submission_owner_and_duplicate(
+        db: Session,
+        data: ProjectSubmitRequest,
+        current_user
+    ):
+        student_ids = ProjectServices.extract_student_ids_from_submit(data)
+
+        if not student_ids:
+            raise HTTPException(
+                status_code=422,
+                detail="ไม่พบรหัสนักศึกษาในข้อมูลโปรเจกต์"
+            )
+
+        current_user_student_id = ProjectServices.normalize_student_id(
+            getattr(current_user, "student_id", None)
+        )
+
+        # 1) คนที่ login ต้องอยู่ในรายชื่อผู้จัดทำ
+        if current_user_student_id not in student_ids:
+            raise HTTPException(
+                status_code=403,
+                detail="คุณสามารถบันทึกได้เฉพาะโปรเจกต์ที่มีรหัสนักศึกษาของคุณเป็นผู้จัดทำเท่านั้น"
+            )
+
+        # 2) เช็คทุก student_id ว่ามี active project อยู่แล้วไหม
+        existing_rows = await ProjectRepository.get_active_projects_by_student_ids(
+            db=db,
+            student_ids=student_ids
+        )
+
+        if existing_rows:
+            duplicated = []
+
+            for project, user in existing_rows:
+                duplicated.append({
+                    "student_id": user.student_id,
+                    "student_name_th": user.user_name_th,
+                    "student_name_en": user.user_name_en,
+                    "project_id": str(project.project_id),
+                    "title_th": project.title_th,
+                    "title_en": project.title_en
+                })
+
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "message": "มีนักศึกษาบางคนมีโปรเจกต์อยู่แล้ว",
+                    "duplicated_students": duplicated
+                }
+            )
+
+        return True
