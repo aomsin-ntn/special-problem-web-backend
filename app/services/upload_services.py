@@ -15,6 +15,10 @@ from app.config import settings
 from itertools import zip_longest
 import time
 
+from starlette.concurrency import run_in_threadpool
+import asyncio
+
+
 class UploadServices:
     def __init__(self):
         self.file_services = FileServices()
@@ -73,7 +77,11 @@ class UploadServices:
         raw_ocr_results = []
         
         for page_num in sorted_pages:
-            ocr_data, ext_data = self.ocr_services.extract(str(dest), page_num)
+            ocr_data, ext_data = await run_in_threadpool(
+                self.ocr_services.extract,
+                str(dest),
+                page_num
+            )
             raw_ocr_results.append({
                 "ocr": ocr_data,
                 "ext": ext_data

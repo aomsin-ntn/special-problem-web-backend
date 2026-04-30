@@ -5,6 +5,8 @@ import re
 from app.services.spell_services import SpellServices
 from app.services.extract_services import ExtractServices
 
+from starlette.concurrency import run_in_threadpool
+
 
 class TextServices:
     def __init__(self):
@@ -12,6 +14,15 @@ class TextServices:
 
     async def process(self, results, db):
         spell_services = await SpellServices.create(db)
+        fields, report_spell_res = await run_in_threadpool(
+            self._process_sync,
+            results,
+            spell_services
+        )
+        return fields, report_spell_res
+
+
+    def _process_sync(self, results, spell_services):
         extract_services = ExtractServices()
 
         selected_texts = []
