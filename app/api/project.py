@@ -23,7 +23,7 @@ from app.services.project_services import ProjectServices
 
 # Schemas
 from app.schemas.root_schema import RootResponse, ItemResponse, ItemRequest, GetProjectRequestParams
-from app.schemas.project_schema import ProjectSaveRequest, ProjectSubmitRequest
+from app.schemas.project_schema import CheckStudentsProjectRequest, ProjectSaveRequest, ProjectSubmitRequest
 
 # Models
 from app.models.user import User, Role
@@ -250,4 +250,12 @@ async def delete_project(
         print(f"Delete Error: {e}")
         raise HTTPException(status_code=500, detail="เกิดข้อผิดพลาดในการลบโปรเจกต์นี้")
 
-
+@router.get("/me/has-project")
+async def check_my_project_status(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    return await ProjectServices.check_current_user_has_project(
+        db=db,
+        current_user=current_user
+    )
