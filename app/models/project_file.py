@@ -13,6 +13,5 @@ class ProjectFile(SQLModel, table=True):
     file_path: str = Field(max_length=255)
     thumbnail_path: str = Field(default=None, max_length=255)
     uploaded_at: datetime = Field(default_factory=datetime.utcnow)
-    file_hash: str = Field(unique=True, index=True, nullable=False)
     status: Status = Field(default=Status.TEMP, max_length=20)
     __tablename__ = "project_files"
