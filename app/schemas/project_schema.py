@@ -17,7 +17,6 @@ class FileInfoInput(BaseModel):
     file_path: str
     save_name: str
     thumbnail_path: str
-    file_hash: str
 
 class DegreeInput(BaseModel):
     degree_id: Optional[UUID] = None
@@ -58,3 +57,6 @@ class ProjectSubmitRequest(BaseModel):
 class ProjectSaveRequest(BaseModel): # สร้าง Schema ใหม่คลุมอีกชั้น
     data: ProjectSubmitRequest
     old_data: Optional[ProjectSubmitRequest] = None
+
+class CheckStudentsProjectRequest(BaseModel):
+    student_ids: list[str]
