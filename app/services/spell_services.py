@@ -60,13 +60,16 @@ class SpellServices:
 
         return correction
     
+
     @staticmethod
     async def save_custom_word(db: Session, cus_word: str):
         custom_word = await SpellRepository.create_custom_word(db, cus_word)
         return custom_word
     
+    GLOBAL_SPELL_CACHE = {}
+
     def __init__(self, error_dict=None, custom_dict=None):
-        self.spell_cache = {}
+        self.spell_cache = SpellServices.GLOBAL_SPELL_CACHE
         self.error_dict = {}
 
         if error_dict:

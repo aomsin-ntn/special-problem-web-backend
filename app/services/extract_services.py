@@ -117,6 +117,7 @@ class ExtractServices:
 
         # ลบขยะ OCR เบื้องต้น
         text = re.sub(r'[\[\]\{\}\|\\/]', '', str(text))
+        text = re.sub(r"\s*---PAGE---\s*", " ", str(text))
 
         # ใช้เฉพาะตอน clean ชื่อคน / student เท่านั้น
         if remove_id_labels:
@@ -372,6 +373,9 @@ class ExtractServices:
 
         text = str(text)
 
+        # ✅ ลบ page marker หลังจากแบ่งหน้าเรียบร้อย
+        text = re.sub(r"\s*---PAGE---\s*", "\n", text)
+
         # ลบ control chars แต่เก็บ newline ไว้ก่อน
         text = text.replace("ฺ", "")
         text = text.replace("|", "\n")
@@ -400,18 +404,16 @@ class ExtractServices:
             prev_last = prev[-1] if prev else ""
             line_first = line[0] if line else ""
 
-            # ถ้าบรรทัดก่อนหน้าลงท้ายไทย และบรรทัดใหม่ขึ้นต้นไทย
-            # ส่วนใหญ่คือ OCR/PDF ตัดบรรทัดกลางประโยค → ต่อแบบไม่เว้นวรรค
             if re.match(r"[ก-๙]", prev_last) and re.match(r"[ก-๙]", line_first):
                 merged[-1] = prev + line
-
-            # อังกฤษ/ตัวเลข/วงเล็บ ควรเว้นวรรค
             else:
                 merged[-1] = prev + " " + line
 
         result = " ".join(merged)
 
-        # จัดช่องว่างรอบ punctuation
+        # ✅ กันเหนียว ลบซ้ำอีกรอบ เผื่อ marker เหลือจาก format แปลก ๆ
+        result = re.sub(r"\s*---PAGE---\s*", " ", result)
+
         result = re.sub(r"\s+([,.;:!?])", r"\1", result)
         result = re.sub(r"\(\s+", "(", result)
         result = re.sub(r"\s+\)", ")", result)

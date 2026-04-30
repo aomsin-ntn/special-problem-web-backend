@@ -346,11 +346,11 @@ class ProjectServices:
                 except ValueError:
                     pass
 
-            await ProjectServices.validate_project_submission_owner_and_duplicate(
-                db=db,
-                data=data,
-                current_user=current_user
-            )
+            # await ProjectServices.validate_project_submission_owner_and_duplicate(
+            #     db=db,
+            #     data=data,
+            #     current_user=current_user
+            # )
 
             fields_to_check = [
                 "title_th",
