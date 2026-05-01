@@ -528,10 +528,13 @@ class ProjectRepository:
                 ProjectFile.uploaded_at < expired_time
             )
         ).all()
-
+    
     @staticmethod
-    async def delete_file_record(db: Session, file: ProjectFile):
-        db.delete(file)
+    async def delete_project_file_no_commit(db: Session, project_file: ProjectFile):
+        db.delete(project_file)
+        db.flush()
+        return project_file
+    
 
     @staticmethod
     async def is_project_owner(db: Session, project_id: UUID, user_id: UUID) -> bool:
