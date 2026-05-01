@@ -37,7 +37,7 @@ class ExtractServices:
         r'|'
         + SECTION_PREFIX +
         r'(?:'
-        r'หัวข้อ\s*(?:โครงงาน|ปัญหา|สหกิจ)พิเศษ|หัวข้อ|เรื่อง|'
+        r'หัวข้อ\s*(?:โครงงาน|ปัญหา|สหกิจ)พิเศษ|โครงงานพิเศษ|ปัญหาพิเศษ|หัวข้อ|เรื่อง|'
         r'ชื่อนักศึกษา|ชื่อผู้จัดทำ|ผู้จัดทำ|เสนอโดย|'
         r'ปริญญา|ภาควิชา|คณะ|มหาวิทยาลัย|มหาวิทลัย|ปีการศึกษา|'
         r'อาจารย์(?:.{0,2}ที่ปรึกษา)?|บทคัดย่อ|คำสำคัญ|'
@@ -79,7 +79,20 @@ class ExtractServices:
 
 
     TH_PATTERNS = {
-        "title_th": SECTION_PREFIX + r'(?:หัวข้อ\s*(?:โครงงาน|ปัญหา|สหกิจ)พิเศษ|หัวข้อ|เรื่อง|โครงการสหกิจศึกษา|สหกิจศึกษา|โครงการ)\s*[:：]?\s*(.*?)' + STOP_TITLE,
+        "title_th": (
+            SECTION_PREFIX
+            + r'(?:'
+            + r'หัวข้อ\s*(?:โครงงาน|ปัญหา|สหกิจ)พิเศษ|'
+            + r'โครงงานพิเศษ|'
+            + r'ปัญหาพิเศษ|'
+            + r'หัวข้อ|'
+            + r'เรื่อง|'
+            + r'โครงการสหกิจศึกษา|'
+            + r'สหกิจศึกษา|'
+            + r'โครงการ'
+            + r')\s*[:：]?\s*(.*?)'
+            + STOP_TITLE
+        ),
         "degree_th": SECTION_PREFIX + r'ปริญญา\s*[:：]?\s*(.*?)' + STOP_METADATA,
         "department_th": SECTION_PREFIX + r'ภาควิชา\s*[:：]?\s*(.*?)' + STOP_METADATA,
         "faculty_th": SECTION_PREFIX + r'(?:คณะ|คญะ)\s*[:：]?\s*(.*?)' + STOP_METADATA,
@@ -338,6 +351,7 @@ class ExtractServices:
 
         # อนุญาตให้ keyword ข้ามหน้าได้ โดยเปลี่ยน page marker เป็น newline
         value = re.sub(r'\n\s*---PAGE---\s*\n', '\n', value)
+        value = re.sub(r'\s*---PAGE---\s*', '\n', value)
 
         value = value.replace("|", "\n")
 
@@ -348,12 +362,25 @@ class ExtractServices:
             flags=re.IGNORECASE
         ).strip()
 
+        raw_items = []
+
+        # 1) ถ้ามี comma / semicolon ให้ใช้เป็นตัวแบ่งหลัก
         if re.search(r'[,;，、]', value):
             raw_items = re.split(r'[,;，、]', value)
+
+        # 2) ถ้ามี newline ให้แบ่งตามบรรทัด
         elif "\n" in value:
             raw_items = re.split(r'\n+', value)
+
+        # 3) ถ้ามีช่องว่างยาว 2 ตัวขึ้นไป ให้แบ่ง
         elif re.search(r'\s{2,}', value):
             raw_items = re.split(r'\s{2,}', value)
+
+        # 4) ไม่มี comma แต่เป็น keyword ไทยหลายคำที่คั่นด้วย space เดียว
+        elif ExtractServices._looks_like_thai_keywords_separated_by_space(value):
+            raw_items = re.split(r'\s+', value)
+
+        # 5) fallback ถือว่าเป็น keyword เดียว
         else:
             raw_items = [value]
 
@@ -365,6 +392,41 @@ class ExtractServices:
                 final_keywords.append(cleaned)
 
         return list(dict.fromkeys(final_keywords))
+
+
+    @staticmethod
+    def _looks_like_thai_keywords_separated_by_space(value: str) -> bool:
+        """
+        ใช้ตัดสินว่า keyword ไทยน่าจะถูกคั่นด้วย space เดียว
+        เช่น: ระบบจัดการครุภัณฑ์ เว็บแอปพลิเคชัน ค่าเสื่อมราคา PostgreSQL
+        """
+        if not value:
+            return False
+
+        # ถ้ามี comma/semicolon อยู่แล้ว ไม่ต้องใช้ space split
+        if re.search(r'[,;，、]', value):
+            return False
+
+        parts = [p.strip() for p in re.split(r'\s+', value.strip()) if p.strip()]
+
+        # ถ้ามีน้อยกว่า 2 ชิ้น ไม่ต้อง split
+        if len(parts) < 2:
+            return False
+
+        thai_parts = [
+            p for p in parts
+            if re.search(r'[ก-๙]', p)
+        ]
+
+        # ถ้าส่วนใหญ่เป็นไทย และแต่ละก้อนดูไม่สั้นเกินไป ให้ถือว่าเป็น keyword แยกกัน
+        if len(thai_parts) >= 2 and len(thai_parts) >= len(parts) * 0.6:
+            short_count = sum(1 for p in parts if len(p) <= 2)
+
+            # กันเคสประโยคธรรมดาที่มีคำสั้น ๆ เยอะ
+            if short_count <= len(parts) * 0.3:
+                return True
+
+        return False
     
     @staticmethod
     def _clean_paragraph_text(text: str) -> str | None:

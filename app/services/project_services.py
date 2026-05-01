@@ -59,16 +59,29 @@ class ProjectServices:
         return await ProjectRepository.delete_project(db, project_id)
     
     @staticmethod
-    async def get_expired_temp_files(db: Session, expiration_minutes: int = 60):
-        expired_files = await ProjectRepository.get_expired_temp_files(db, expiration_minutes)
+    async def get_expired_temp_files(db: Session, expired_time: datetime):
+        expired_files = await ProjectRepository.get_expired_temp_files(
+            db=db,
+            expired_time=expired_time
+        )
         return expired_files
-    
+
+
     @staticmethod
     async def delete_project_file(db: Session, file_id: UUID):
-        project_file = await ProjectRepository.get_project_file_by_id(db, file_id)
+        project_file = await ProjectRepository.get_project_file_by_id(
+            db=db,
+            file_id=file_id
+        )
+
         if not project_file:
             raise HTTPException(status_code=404, detail="File not found")
-        await ProjectRepository.delete_project_file(db, file_id)
+
+        await ProjectRepository.delete_project_file_no_commit(
+            db=db,
+            project_file=project_file
+        )
+
         return project_file
 
     @staticmethod

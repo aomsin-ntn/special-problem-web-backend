@@ -33,9 +33,14 @@ class FileServices:
     
     @staticmethod
     async def cleanup_temp_files(db: Session):
-        expired_time = datetime.utcnow() - timedelta(hours=24)
+        expired_time = datetime.utcnow() - timedelta(hours=1)
 
-        temp_files = await ProjectServices.get_expired_temp_files(db, expired_time)
+        temp_files = await ProjectServices.get_expired_temp_files(
+            db=db,
+            expired_time=expired_time
+        )
+
+        deleted_count = 0
 
         for file in temp_files:
             try:
@@ -44,12 +49,20 @@ class FileServices:
 
                 if file.thumbnail_path and Path(file.thumbnail_path).exists():
                     Path(file.thumbnail_path).unlink()
+
             except Exception as e:
                 print(f"Delete error: {e}")
 
-            await ProjectServices.delete_project_file(db, file.file_id)
+            await ProjectServices.delete_project_file(
+                db=db,
+                file_id=file.file_id
+            )
+
+            deleted_count += 1
 
         db.commit()
+
+        return {"deleted_count": deleted_count}
 
     @staticmethod
     def safe_delete(path: str | None):
