@@ -17,5 +17,5 @@ class User(SQLModel, table=True):
     degree_id: UUID | None = Field(foreign_key="degrees.degree_id")
     role: Role = Field(sa_column=Field(default=Role.STUDENT, nullable=False))
     email: str = Field(max_length=255, unique=True)
-    last_login_at: datetime | None = Field(default_factory=datetime.utcnow)
+    last_login_at: datetime | None = Field(default=None, nullable=True)
     __tablename__ = "users"
